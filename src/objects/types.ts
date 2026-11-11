@@ -56,7 +56,7 @@ export interface ObjectDef {
   /** Lazy shape module, so only the selected object's code is loaded. */
   load: () => Promise<ShapeBuilder>;
   /** Behaviour overrides where this object differs from its material. */
-  physics?: { rigidity?: number; plastic?: { yield: number; rate: number; recover: number } };
+  physics?: { rigidity?: number; plastic?: { yield: number; rate: number; recover: number }; tear?: number; restitution?: number };
   /** Default Firmness slider position (0..1) if this object differs from its material. */
   firmness?: number;
   /** The variety changes the shape itself (Swiss vs cheddar): rebuild on change. */

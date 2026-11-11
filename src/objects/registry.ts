@@ -223,8 +223,8 @@ export const OBJECTS: ObjectDef[] = [
   },
   {
     id: 'tomato',
-    // Ripe: much softer than an orange, bursts under pressure.
-    physics: { rigidity: 0.15 },
+    // Ripe: gives under a press and bursts, but never bounces like rubber.
+    physics: { rigidity: 0.85, plastic: { yield: 0.06, rate: 2, recover: 0.5 }, restitution: 0.02 },
     no: 13,
     group: 'fruit',
     title: ['Ripe', 'Tomato.'],
@@ -259,7 +259,7 @@ export const OBJECTS: ObjectDef[] = [
   {
     id: 'bread',
     // Springs back.
-    physics: { plastic: { yield: 0.06, rate: 2.5, recover: 0.8 } },
+    physics: { rigidity: 0.6, plastic: { yield: 0.03, rate: 5, recover: 0.7 }, tear: 0.16 },
     no: 15,
     group: 'soft',
     title: ['Soft', 'Loaf.'],
@@ -275,7 +275,7 @@ export const OBJECTS: ObjectDef[] = [
   },
   {
     id: 'donut',
-    physics: { plastic: { yield: 0.05, rate: 2.5, recover: 0.4 } },
+    physics: { rigidity: 0.75, plastic: { yield: 0.03, rate: 5, recover: 0.3 }, tear: 0.14 },
     no: 16,
     group: 'soft',
     title: ['Glazed', 'Donut.'],

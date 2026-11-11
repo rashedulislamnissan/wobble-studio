@@ -57,6 +57,8 @@ export class Runtime {
   /** Debris style for the current object (set by the studio). */
   debrisStyle: { kind: ParticleKind; color: string } = { kind: 'shimmer', color: '#ffffff' };
   objectId = '';
+  /** Crumbly objects shed debris when they land hard. */
+  crumbles = false;
   /** Called after a successful cut. */
   onCut: (() => void) | null = null;
   private statsTimer = 0;
@@ -217,6 +219,10 @@ export class Runtime {
       if (impact.speed > IMPACT_MIN_SPEED && impact.fraction > 0.01) {
         const i = (impact.speed - IMPACT_MIN_SPEED) / (IMPACT_FULL_SPEED - IMPACT_MIN_SPEED);
         audio.play('impact', i * Math.min(1, impact.fraction * 8));
+        if (this.crumbles && i > 0.25) {
+          const f = this.footprint;
+          this.particles.burst(this.debrisStyle.kind, [f.x, 0.04, f.z], Math.round(6 + i * 18), this.debrisStyle.color, [0, 0.5, 0]);
+        }
       }
     }
     this.renderer.render(this.stage.scene, this.stage.camera);

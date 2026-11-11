@@ -152,9 +152,22 @@ export async function startStudio(params: AppParams) {
     damping: rangeValue(m.damping, state.damp),
     bulk: m.bulk,
     density: m.density,
-    rigidity: state.def.physics?.rigidity ?? m.rigidity,
+    rigidity: rigidityAt(m, state.firm),
     plastic: state.def.physics?.plastic ?? m.plastic,
+    tear: state.def.physics?.tear ?? m.tear,
+    restitution: state.def.physics?.restitution ?? m.restitution,
   });
+
+  /**
+   * For solids the Firmness slider sets how much they give: the object's rigidity at the
+   * default position, more give below it, stiffer above.
+   */
+  function rigidityAt(m: MaterialDef, t: number) {
+    const base = state.def.physics?.rigidity ?? m.rigidity;
+    if (base <= 0) return 0;
+    const give = (1 - base) * Math.pow(10, (m.stiffness.default - t) * 2);
+    return Math.min(0.999, Math.max(0, 1 - give));
+  }
 
   function applyTint(instant: boolean) {
     const v = state.variant;
@@ -221,7 +234,7 @@ export async function startStudio(params: AppParams) {
         format: (t) => String(Math.round(t * 100)).padStart(2, '0'),
         onInput: (t) => {
           state.firm = t;
-          rt.setParams({ stiffness: rangeValue(m.stiffness, t) });
+          rt.setParams({ stiffness: rangeValue(m.stiffness, t), rigidity: rigidityAt(m, t) });
         },
       },
       damping: m.dampingAdjustable
@@ -292,13 +305,15 @@ export async function startStudio(params: AppParams) {
         ? { roughness: 0.1, clearcoat: 1 }
         : { roughness: shape.look?.roughness ?? m.look.roughness, clearcoat: shape.look?.clearcoat ?? m.look.clearcoat ?? 0 };
     const mat: Material =
-      m.look.kind === 'jelly' ? createJellyMaterial(m.look.clarity).material : createSurfaceMaterial(m, shape.look);
+      m.look.kind === 'jelly'
+        ? createJellyMaterial(m.look.clarity, shape.look?.shade).material : createSurfaceMaterial(m, shape.look);
     queue = [];
     rt.displayDensity = m.displayDensity;
     rt.setSpecimen(shape, mesher, variant, bodyParams(m), mat, first ? 0.45 : 0.3);
     rt.specimen!.setShowMesh(state.showMesh);
     audio.material = def.material;
     rt.objectId = def.id;
+    rt.crumbles = !!m.crumbles;
     applyDebrisStyle();
     audio.overrides = POKE_OVERRIDES[def.id] ? { poke: [POKE_OVERRIDES[def.id]] } : {};
     renderPanel();

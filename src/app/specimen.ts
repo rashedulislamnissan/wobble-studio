@@ -426,16 +426,19 @@ export class Specimen {
         next.push(parent);
         continue;
       }
-      // Details go to whichever child contains them most.
+      // Details go to the child owning the nearest node (rest space): robust for things
+      // that sit just outside the body, like a strawberry's leaves.
+      const kids = new Set(children.get(o.oldPiece)!);
       const detailIds = parent.detailIds.filter((id) => {
         const [x, y, z] = this.mesher.detailCentroids[id];
-        let best = j;
+        let best = -1;
         let bestD = Infinity;
-        for (const k of children.get(o.oldPiece)!) {
-          const d = sdfs[k](x, y, z);
+        for (let i = 0; i < top.nodePiece.length; i++) {
+          if (!kids.has(top.nodePiece[i])) continue;
+          const d = (top.rest[i * 3] - x) ** 2 + (top.rest[i * 3 + 1] - y) ** 2 + (top.rest[i * 3 + 2] - z) ** 2;
           if (d < bestD) {
             bestD = d;
-            best = k;
+            best = top.nodePiece[i];
           }
         }
         return best === j;

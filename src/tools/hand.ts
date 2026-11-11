@@ -19,6 +19,7 @@ export class HandTool implements Tool {
   private readonly forward = new Vector3();
   private readonly start = new Vector3();
   private active = false;
+  private tearCooldown = 0;
 
   down(ctx: ToolContext, p: PointerSample): boolean {
     const hit = ctx.pick(p.ndcX, p.ndcY);
@@ -57,6 +58,36 @@ export class HandTool implements Tool {
     this.target.z = Math.max(-halfDepth, Math.min(halfDepth, this.target.z));
     this.target.y = Math.max(GRAB.minHeight, Math.min(ceiling - 0.2, this.target.y));
     ctx.specimen.body.moveGrab([this.target.x, this.target.y, this.target.z]);
+  }
+
+  /** Weak materials tear when yanked: the held region comes away as its own piece. */
+  update(ctx: ToolContext, dt: number) {
+    this.tearCooldown = Math.max(0, this.tearCooldown - dt);
+    const tear = ctx.specimen.body.params.tear;
+    if (!this.active || !tear || this.tearCooldown > 0) return;
+    const g = ctx.specimen.body.grabLag();
+    if (!g || g.lag < tear * ctx.specimen.shape.size) return;
+    const size = ctx.specimen.shape.size;
+    const r = size * (this.radiusFraction + 0.06);
+    const c = [g.x, g.y, g.z];
+    const field = (x: number, y: number, z: number) => Math.hypot(x - c[0], y - c[1], z - c[2]) - r;
+    const target = [this.target.x, this.target.y, this.target.z];
+    if (!ctx.cut(field, { separation: 0 })) {
+      this.tearCooldown = 0.25;
+      return;
+    }
+    ctx.sound('break', 0.6);
+    ctx.debris([c[0], c[1], c[2]], 16, [0, 0.6, 0]);
+    // Keep holding the torn chunk: the piece whose nodes sit nearest the hold.
+    const b = ctx.specimen.body;
+    let best = -1, bestD = Infinity;
+    for (let i = 0; i < b.count; i++) {
+      const d = (b.pos[i * 3] - c[0]) ** 2 + (b.pos[i * 3 + 1] - c[1]) ** 2 + (b.pos[i * 3 + 2] - c[2]) ** 2;
+      if (d < bestD) { bestD = d; best = b.nodePiece[i]; }
+    }
+    this.active = b.beginGrab(c, r * 1.2, GRAB.compliance, best);
+    if (this.active) b.moveGrab(target);
+    this.tearCooldown = 0.5;
   }
 
   up(ctx: ToolContext) {

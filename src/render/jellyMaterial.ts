@@ -15,7 +15,8 @@ const JELLY_RELIEF: BumpLayer[] = [
   { pattern: 'grain', scale: 38, depth: 0.0005 },
 ];
 
-export function createJellyMaterial(clarity = 0.75) {
+/** `shade` optionally recolours per pixel (crisp markings, e.g. the penguin face). */
+export function createJellyMaterial(clarity = 0.75, shade?: (base: unknown, rest: unknown) => unknown) {
   const uClarity = uniform(clarity);
   const mat = new MeshPhysicalNodeMaterial({
     metalness: 0,
@@ -27,9 +28,11 @@ export function createJellyMaterial(clarity = 0.75) {
     sheenRoughness: 0.35,
   });
 
-  const body = attribute('color', 'vec3');
   const surf = attribute('surf', 'vec4');
   const rest = attribute('rest', 'vec3');
+  const vcol = attribute('color', 'vec3');
+  // Markings apply to the body only; details (eyes) carry surf.z = 0 and keep their colour.
+  const body = shade ? mix(vcol, shade(vcol, rest) as typeof vcol, surf.z.clamp(0, 1)) : vcol;
   const core = body.pow(vec3(1.25)).mul(0.76);
   const edgeLight = mix(body, vec3(1), 0.45);
   const facing = normalView.dot(positionViewDirection).abs();

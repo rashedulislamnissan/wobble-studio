@@ -153,3 +153,25 @@ never hitch.
 - **Procedural over photo textures:** SDF meshes have no UVs; triplanar photo textures would
   cost ~0.5 MB per object and still tile visibly. Procedural detail is resolution-free, moves
   with the deformation and costs nothing to download.
+
+---
+
+## D7 — Food that behaves like food (second pass)
+
+**Date:** 2026-11-11 · **Owner feedback:** "fruit and cake are still rubber".
+
+Measured with `scripts/feel-test.mjs` (hold overshoot and drop rebounds in the live app), which
+showed two rubbery behaviours the first pass missed:
+
+1. **Springy grip.** A deliberately soft grip on solids made them trail the hand like a rubber
+   band. Solids now get a firm grip (with a wider hold) and rigidity of 0.97–0.998: they follow
+   the hand exactly (overshoot 0.000).
+2. **Superball landings.** In position-based dynamics a near-rigid body turns the floor's
+   push-out into upward velocity, so the "rigid" apple bounced five times. Solids now have
+   restitution: on touchdown the landing speed is recorded and, while touching the floor, the
+   piece may not rise faster than restitution × that speed (apple 0.15, citrus 0.08, cheese
+   0.05, tomato 0.02, cake 0). Upward speed present at the start of a frame (Nudge, actions,
+   tosses) is respected. Result: apple hops ~3 cm, cake/bread/tomato thud (~2 cm), cheese 0.
+3. **Cake and bread tear.** Sponge holds its shape when moved gently but a yank tears the held
+   chunk off (with crumbs); landing hard sheds crumbs; dents stay. Mochi stretches far before it
+   would tear. The Firmness slider sets how much give a solid has.

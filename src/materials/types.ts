@@ -41,6 +41,12 @@ export interface MaterialDef {
   rigidity: number;
   /** Plastic flow (dents that stay) and slow recovery; absent = perfectly elastic. */
   plastic?: { yield: number; rate: number; recover: number };
+  /** Tears off a held chunk when yanked (fraction of size the hold may lag). */
+  tear?: number;
+  /** Bounce as a fraction of landing speed; undefined = natural (jelly). */
+  restitution?: number;
+  /** Sheds debris when it lands hard (cake and bread crumbs). */
+  crumbles?: boolean;
   /** Debris when cut, struck or crumbled; colour defaults to the variant colour. */
   debris: { kind: ParticleKind; color?: string };
   /** Rendering hints. */

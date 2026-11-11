@@ -1,21 +1,29 @@
-/** Penguin jelly: a chubby egg with a pale belly, flippers, orange feet and beak. */
-import { ConeGeometry } from 'three/webgpu';
-import { paint } from '../build';
-import { lin, mix, smoothstep } from '../color';
+/**
+ * Penguin jelly: one round, bottom-heavy egg with soft flippers, a heart-shaped white face
+ * running into a white belly, a small rounded beak, blush and orange feet. The markings
+ * are drawn per pixel (shadePenguin) so their edges stay clean at any zoom.
+ */
+import { Color } from 'three/webgpu';
+import { float, max, min, mix as tmix, smoothstep as ss, uniform, type attribute } from 'three/tsl';
+import { lin } from '../color';
 import { ellipsoid, intersect, rotateZ, smoothUnion, translate, type Sdf } from '../sdf';
-import type { ShapeBuilder, Variant } from '../types';
-import { eyes, surfaceAlong, yaw } from './parts';
+import type { ShapeBuilder } from '../types';
+import { eyes, yaw } from './parts';
 
-const TURN = 0.3;
+const TURN = 0.28;
+const EYE = { x: 0.085, y: 0.8 };
+const BEAK = { y: 0.725, z: 0.29 };
 
 const local: Sdf = (() => {
-  const body = ellipsoid(0, 0.42, 0, 0.33, 0.42, 0.31);
-  const head = ellipsoid(0, 0.8, 0.02, 0.25, 0.23, 0.24);
-  const flipR = translate(rotateZ(ellipsoid(0, 0, 0, 0.065, 0.21, 0.13), 0.38), 0.31, 0.45, 0);
-  const flipL = translate(rotateZ(ellipsoid(0, 0, 0, 0.065, 0.21, 0.13), -0.38), -0.31, 0.45, 0);
-  const foot = (x: number) => ellipsoid(x, 0.07, 0.17, 0.12, 0.05, 0.15);
-  // Flat-bottomed, like a weighted toy: the base is wide enough to stand on.
-  return intersect(smoothUnion(0.07, body, head, flipR, flipL, foot(0.13), foot(-0.13)), (_x, y) => 0.06 - y, 0.03);
+  const body = ellipsoid(0, 0.46, 0, 0.35, 0.46, 0.32);
+  const hips = ellipsoid(0, 0.3, 0, 0.37, 0.3, 0.33);
+  const head = ellipsoid(0, 0.77, 0.01, 0.27, 0.22, 0.25);
+  const flipR = translate(rotateZ(ellipsoid(0, 0, 0, 0.06, 0.2, 0.12), 0.42), 0.33, 0.45, -0.02);
+  const flipL = translate(rotateZ(ellipsoid(0, 0, 0, 0.06, 0.2, 0.12), -0.42), -0.33, 0.45, -0.02);
+  const foot = (x: number) => ellipsoid(x, 0.05, 0.19, 0.11, 0.045, 0.13);
+  const beak = ellipsoid(0, BEAK.y, BEAK.z, 0.055, 0.04, 0.075);
+  const shape = smoothUnion(0.07, smoothUnion(0.14, body, hips, head), flipR, flipL, foot(0.13), foot(-0.13), beak);
+  return intersect(shape, (_x, y) => 0.05 - y, 0.03);
 })();
 
 const sdf: Sdf = (x, y, z) => {
@@ -23,29 +31,52 @@ const sdf: Sdf = (x, y, z) => {
   return local(lx, y, lz);
 };
 
-const BELLY: Record<string, string> = { classic: '#F4F1EA', ice: '#F6FBFF', sunset: '#FFF1DE' };
+type Vec3 = ReturnType<typeof attribute<'vec3'>>;
+const WHITE = uniform(new Color('#F7F4EC'));
+const ORANGE = uniform(new Color('#F49A2C'));
+const BLUSH = uniform(new Color('#F49AAE'));
+const cosT = Math.cos(-TURN);
+const sinT = Math.sin(-TURN);
 
-function palette(v: Variant) {
-  return { body: lin(v.color), belly: lin(BELLY[v.id] ?? '#F4F1EA'), orange: lin('#F29A2E') };
+/** Per-pixel markings in rest space (local, facing +z). */
+function shadePenguin(baseIn: unknown, restIn: unknown): unknown {
+  const base = baseIn as Vec3;
+  const r = restIn as Vec3;
+  const lx = r.x.mul(cosT).sub(r.z.mul(sinT));
+  const lz = r.x.mul(sinT).add(r.z.mul(cosT));
+  const y = r.y;
+  const front = ss(0.02, 0.1, lz);
+  // Belly: tall oval. Face: two overlapping circles (a heart) around the eyes.
+  const belly = lx.div(0.25).pow(2).add(y.sub(0.42).div(0.36).pow(2));
+  const faceL = lx.add(EYE.x).div(0.12).pow(2).add(y.sub(0.79).div(0.12).pow(2));
+  const faceR = lx.sub(EYE.x).div(0.12).pow(2).add(y.sub(0.79).div(0.12).pow(2));
+  const d = min(belly, min(faceL, faceR));
+  const white = float(1).sub(ss(0.92, 1.0, d)).mul(front);
+  // Beak and feet.
+  const beakD = lx.div(0.06).pow(2).add(y.sub(BEAK.y).div(0.045).pow(2));
+  const beak = float(1).sub(ss(0.85, 1.0, beakD)).mul(ss(0.24, 0.28, lz));
+  const feet = float(1).sub(ss(0.085, 0.1, y)).mul(ss(0.06, 0.12, lz));
+  // Blush just below and outside the eyes.
+  const cheek = min(
+    lx.add(0.15).div(0.05).pow(2).add(y.sub(0.73).div(0.028).pow(2)),
+    lx.sub(0.15).div(0.05).pow(2).add(y.sub(0.73).div(0.028).pow(2)),
+  );
+  const blush = float(1).sub(ss(0.4, 1.0, cheek)).mul(front).mul(0.8);
+  let c = tmix(base, WHITE, white);
+  c = tmix(c, BLUSH, blush);
+  c = tmix(c, ORANGE, max(beak, feet));
+  return c;
 }
 
 export const penguin: ShapeBuilder = () => ({
   sdf,
-  bounds: { min: [-0.5, 0, -0.45], max: [0.5, 1.04, 0.45] },
-  size: 1.04,
+  bounds: { min: [-0.5, 0, -0.45], max: [0.5, 1.0, 0.45] },
+  size: 1.0,
   ballast: 4,
+  look: { shade: shadePenguin },
   color: (v) => {
-    const p = palette(v);
-    return (x, y, z, _nx, _ny, nz) => {
-      const [lx, lz] = yaw(x, z, -TURN);
-      const [, lnz] = yaw(0, nz, -TURN);
-      if (y < 0.11 && lz > 0.08) return p.orange; // feet
-      // Pale belly and face on the front.
-      const belly = (lx / 0.25) ** 2 + ((y - 0.43) / 0.36) ** 2 < 1 && lz > 0;
-      const face = (lx / 0.17) ** 2 + ((y - 0.8) / 0.13) ** 2 < 1 && lz > 0.05;
-      const front = smoothstep(0.1, 0.4, lnz);
-      return belly || face ? mix(p.body, p.belly, front) : p.body;
-    };
+    const c = lin(v.color);
+    return () => c;
   },
   details: () => {
     const w = (x: number, y: number, z: number): [number, number, number] => {
@@ -53,21 +84,12 @@ export const penguin: ShapeBuilder = () => ({
       return [wx, y, wz];
     };
     const dir = (side: number): [number, number, number] => {
-      const [x, z] = yaw(0.35 * side, 1, TURN);
-      return [x, 0.15, z];
+      const [x, z] = yaw(0.22 * side, 1, TURN);
+      return [x, 0.08, z];
     };
-    const eyeGeo = eyes(sdf, [w(0.08, 0.84, 0), w(-0.08, 0.84, 0)], (i) => dir(i === 0 ? 1 : -1), 0.035);
-    // Beak: a short cone poking out of the face.
-    const fwd = yaw(0, 1, TURN);
-    const t = surfaceAlong(sdf, w(0, 0.76, 0), [fwd[0], 0, fwd[1]]);
-    const beak = new ConeGeometry(0.05, 0.12, 12);
-    beak.rotateX(Math.PI / 2);
-    beak.rotateY(TURN);
-    const base = w(0, 0.76, 0);
-    beak.translate(base[0] + fwd[0] * (t + 0.03), 0.76, base[2] + fwd[1] * (t + 0.03));
-    return [...eyeGeo, paint(beak, lin('#F29A2E'))];
+    return eyes(sdf, [w(EYE.x, EYE.y, 0), w(-EYE.x, EYE.y, 0)], (i) => dir(i === 0 ? 1 : -1), 0.041, { sink: 0.5 });
   },
   regions: {
-    top: (_x, y) => smoothstep(0.4, 0.95, y),
+    top: (_x, y) => Math.min(1, Math.max(0, (y - 0.4) / 0.55)),
   },
 });
