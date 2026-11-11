@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Wobble Studio</title>
+    <meta name="description" content="Soft things, made playable. Drag, poke, squish and cut jelly, fruit and food in your browser." />
+    <meta name="theme-color" content="#E7ECF2" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <div id="app" class="app" data-state="loading">
+      <canvas id="stage" class="stage-canvas" aria-label="3D stage" role="img"></canvas>
+      <div id="ui" class="ui"></div>
+      <div class="loading" aria-hidden="true"><span class="loading__dot"></span></div>
+    </div>
+    <noscript>
+      <p class="noscript">Wobble Studio needs JavaScript to run its 3D stage.</p>
+    </noscript>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

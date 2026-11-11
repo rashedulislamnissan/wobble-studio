@@ -1,0 +1,36 @@
+{
+  "name": "wobble-studio",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Soft things, made playable. A 3D website of jelly, fruit and food objects you can drag, poke, squish and cut.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "check": "npm run lint && npm run test && npm run build"
+  },
+  "dependencies": {
+    "@fontsource/cormorant-garamond": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.6",
+    "@types/three": "0.187.0",
+    "eslint": "^10.14.0",
+    "playwright-core": "^1.65.0",
+    "prettier": "^3.10.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.72.2",
+    "vite": "8.3.8",
+    "vitest": "5.1.0"
+  }
+}
