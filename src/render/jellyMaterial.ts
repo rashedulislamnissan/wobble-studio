@@ -1,55 +1,35 @@
 /**
  * Glossy jelly. A flat studio backdrop gives physical transmission nothing to refract,
- * so translucency is art-directed instead: a saturated body, a deeper core, light
- * "glowing through" thin edges, a wet clearcoat and crisp environment highlights.
- * Identical on the WebGPU and WebGL backends, and cheaper than a transmission pass.
+ * so translucency is art-directed instead (see docs/decisions.md D3): a saturated body,
+ * a deeper core, light "glowing through" thin edges, a wet clearcoat and crisp highlights.
+ * Body colour comes from vertex colours, so eyes and bellies work per object.
  */
-import { Color, MeshPhysicalNodeMaterial } from 'three/webgpu';
-import { float, mix, normalView, positionViewDirection, smoothstep, uniform } from 'three/tsl';
+import { MeshPhysicalNodeMaterial } from 'three/webgpu';
+import { attribute, float, mix, normalView, positionViewDirection, smoothstep, uniform, vec3 } from 'three/tsl';
 
-export interface JellyLook {
-  color: string;
-  /** 0 = dense gummy, 1 = very clear jelly (stronger edge glow). */
-  clarity?: number;
-}
-
-export function createJellyMaterial({ color, clarity = 0.75 }: JellyLook) {
-  const uBody = uniform(new Color());
-  const uCore = uniform(new Color());
-  const uEdge = uniform(new Color());
+export function createJellyMaterial(clarity = 0.75) {
   const uClarity = uniform(clarity);
-
   const mat = new MeshPhysicalNodeMaterial({
     roughness: 0.18,
     metalness: 0,
     clearcoat: 1,
     clearcoatRoughness: 0.035,
     specularIntensity: 0.9,
-    sheen: 0.35,
+    sheen: 0.3,
+    sheenColor: 0xffffff,
     sheenRoughness: 0.4,
   });
 
+  const body = attribute('color', 'vec3');
+  const core = body.pow(vec3(1.25)).mul(0.78);
+  const edgeLight = mix(body, vec3(1), 0.45);
   const facing = normalView.dot(positionViewDirection).abs();
   const edge = smoothstep(float(0.85), float(0.05), facing); // 0 centre → 1 silhouette
-  // Diffuse: deeper core, lighter body toward the rim.
-  mat.colorNode = mix(uCore, uBody, edge.pow(0.7));
-  // Light scattering out through thin edges, plus a faint inner glow everywhere.
-  mat.emissiveNode = mix(uBody.mul(0.12), uEdge.mul(0.55), edge.pow(1.6).mul(uClarity));
-
-  const setColor = (hex: string) => {
-    const c = new Color(hex);
-    const hsl = { h: 0, s: 0, l: 0 };
-    c.getHSL(hsl);
-    uBody.value.copy(c);
-    uCore.value.setHSL(hsl.h, Math.min(1, hsl.s * 1.08), hsl.l * 0.72);
-    uEdge.value.copy(c).lerp(new Color('#ffffff'), 0.45);
-    mat.sheenColor = new Color().copy(c).lerp(new Color('#ffffff'), 0.6);
-  };
-  setColor(color);
+  mat.colorNode = mix(core, body, edge.pow(0.7));
+  mat.emissiveNode = mix(body.mul(0.12), edgeLight.mul(0.55), edge.pow(1.6).mul(uClarity));
 
   return {
     material: mat,
-    setColor,
     setClarity(v: number) {
       uClarity.value = v;
     },

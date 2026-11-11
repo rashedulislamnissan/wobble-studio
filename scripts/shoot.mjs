@@ -37,6 +37,28 @@ await page.goto(url, { waitUntil: 'networkidle' });
 await page.waitForTimeout(Number(opt('wait', 2500)));
 await page.screenshot({ path: `${outPrefix}-1.png` });
 
+const tool = opt('tool', null);
+if (tool) {
+  await page.getByRole('radio', { name: tool, exact: true }).first().click();
+  await page.waitForTimeout(200);
+  const box = await page.locator('#stage').boundingBox();
+  const cx = box.x + box.width * Number(opt('cx', 0.5));
+  const cy = box.y + box.height * Number(opt('cy', 0.55));
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  if (tool === 'Press') {
+    for (let i = 1; i <= 20; i++) {
+      await page.mouse.move(cx, cy + i * 12);
+      await page.waitForTimeout(16);
+    }
+  }
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: `${outPrefix}-2-${tool.toLowerCase()}.png` });
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+  await page.screenshot({ path: `${outPrefix}-3-after.png` });
+}
+
 if (has('--drag')) {
   const box = await page.locator('#stage').boundingBox();
   // Stage centre is roughly where the specimen sits.

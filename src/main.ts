@@ -20,10 +20,7 @@ async function boot() {
     return;
   }
   try {
-    if (params.dev === 'blob') {
-      const { startDevBlob } = await import('./app/devBlob');
-      await startDevBlob(params);
-    } else if (params.dev === 'tints') {
+    if (params.dev === 'tints') {
       const { startTintBoard } = await import('./ui/tintBoard');
       startTintBoard();
     } else {

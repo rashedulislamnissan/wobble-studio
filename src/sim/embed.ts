@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Embed a render surface in the tet mesh: each render vertex stores the tet it lives in
  * plus barycentric weights, so it follows the deforming simulation exactly.
  */

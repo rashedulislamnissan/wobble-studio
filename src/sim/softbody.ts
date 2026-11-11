@@ -1,4 +1,4 @@
-﻿/**
+/**
  * XPBD soft-body solver (CPU). Edge (shear/stretch) + tet volume constraints,
  * solved with the "small steps" scheme: many substeps, one iteration each.
  *
@@ -7,6 +7,10 @@
  */
 import { SIM } from '../config';
 import { seededRandom, tetVolume, type TetMesh } from './lattice';
+
+export type Collider =
+  | { kind: 'sphere'; x: number; y: number; z: number; r: number; depth: number; contacts: number }
+  | { kind: 'plate'; y: number; depth: number; contacts: number };
 
 export interface SoftBodyParams {
   /** Young's-modulus-like stiffness of edges. Higher = firmer. */
@@ -44,6 +48,17 @@ export class SoftBody {
   readonly totalRestVolume: number;
   /** 1 while a particle touches the floor this substep. */
   readonly contact: Uint8Array;
+  /** Fastest landing speed and number of landings since the last read (see takeImpact). */
+  impactSpeed = 0;
+  impactCount = 0;
+
+  /** Read and clear the impact accumulator (once per rendered frame). */
+  takeImpact() {
+    const r = { speed: this.impactSpeed, count: this.impactCount, fraction: this.impactCount / this.count };
+    this.impactSpeed = 0;
+    this.impactCount = 0;
+    return r;
+  }
   /** Particle-space floor: particles stop here so the *render surface* touches y = 0. */
   floorY = 0;
 
@@ -136,16 +151,35 @@ export class SoftBody {
       this.solveCollisions();
       this.updateVelocities(sdt);
       this.applyContactFriction(sdt);
-      if ((s & 3) === 3 || s === n - 1) this.applyEdgeDamping(sdt * ((s & 3) + 1));
+      if (this.holdHorizontal) this.cancelHorizontalDrift();
+      this.applyEdgeDamping(sdt);
     }
+    this.applyContactDrag(dt);
     this.applyAirDragAndClamp(dt);
+  }
+
+  /**
+   * Rolling resistance: while resting on the floor, all motion (rigid rocking and rolling
+   * included) decays in proportion to how much of the body is in contact. Stiff, round
+   * objects would otherwise rock forever, since internal damping deliberately ignores rigid
+   * motion. Airborne bodies are untouched.
+   */
+  private applyContactDrag(dt: number) {
+    let touching = 0;
+    for (let i = 0; i < this.count; i++) touching += this.contact[i];
+    if (touching === 0) return;
+    const share = Math.min(1, (touching / this.count) * SIM.contactDragShare);
+    const k = Math.exp(-SIM.contactDrag * share * dt);
+    const v = this.vel;
+    for (let i = 0; i < v.length; i++) v[i] *= k;
   }
 
   /**
    * Internal damping: removes the relative velocity of each edge's endpoints *along* the
    * edge. Rigid translation and rotation have no along-edge component, so throws and spins
    * keep their momentum while squash, stretch and wobble settle - including squash against
-   * the floor, which a centre-of-mass based damper cannot see. Run every few substeps.
+   * the floor, which a centre-of-mass based damper cannot see. Runs every substep: stiff
+   * materials vibrate faster than a sparser schedule can sample, and would ring forever.
    */
   private applyEdgeDamping(dt: number) {
     const k = 1 - Math.exp(-this.params.damping * dt * SIM.edgeDampingScale);
@@ -216,7 +250,7 @@ export class SoftBody {
       const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
       if (len < 1e-9) continue;
       const rl = restLen[e];
-      // Spring stiffness of an edge â‰ˆ E * restLength, so compliance = 1 / (E * L).
+      // Spring stiffness of an edge ≈ E * restLength, so compliance = 1 / (E * L).
       const alpha = invStiffDt2 / rl;
       const s = -(len - rl) / (w + alpha) / len;
       pos[a] += dx * s * wi;
@@ -274,8 +308,10 @@ export class SoftBody {
     const { halfWidth, halfDepth, ceiling } = SIM.bounds;
     const floor = this.floorY;
     const contact = this.contact;
+    const vel = this.vel;
     for (let i = 0; i < this.count; i++) {
       const k = i * 3;
+      const was = contact[i];
       contact[i] = 0;
       if (pos[k + 1] <= floor) {
         pos[k + 1] = floor;
@@ -283,12 +319,124 @@ export class SoftBody {
         // prev is clamped so the floor adds no artificial bounce.
         if (prev[k + 1] < floor) prev[k + 1] = floor;
         contact[i] = 1;
+        if (!was) {
+          // Landing: record how hard (drives impact sounds and particles).
+          const s = -vel[k + 1];
+          if (s > this.impactSpeed) this.impactSpeed = s;
+          this.impactCount++;
+        }
       }
       if (pos[k + 1] > ceiling) pos[k + 1] = ceiling;
       if (pos[k] < -halfWidth) pos[k] = -halfWidth;
       else if (pos[k] > halfWidth) pos[k] = halfWidth;
       if (pos[k + 2] < -halfDepth) pos[k + 2] = -halfDepth;
       else if (pos[k + 2] > halfDepth) pos[k + 2] = halfDepth;
+    }
+    if (this.colliders.length) this.solveColliders();
+  }
+
+  /**
+   * While a tool presses on the body (poke), cancel its net horizontal drift: the object
+   * stays put and dents, like jelly gripping its plate, instead of sliding away.
+   */
+  holdHorizontal = false;
+
+  private cancelHorizontalDrift() {
+    const { vel, mass } = this;
+    let m = 0, vx = 0, vz = 0;
+    for (let i = 0; i < this.count; i++) {
+      m += mass[i];
+      vx += vel[i * 3] * mass[i];
+      vz += vel[i * 3 + 2] * mass[i];
+    }
+    if (m === 0) return;
+    vx /= m;
+    vz /= m;
+    for (let i = 0; i < this.count; i++) {
+      vel[i * 3] -= vx;
+      vel[i * 3 + 2] -= vz;
+    }
+  }
+
+  /** Kinematic tool colliders (poke fingertip, press plate). Contact depth feeds audio. */
+  readonly colliders: Collider[] = [];
+
+  /**
+   * Surface proxies: sample points on the visible surface, embedded in the tets. Tool
+   * colliders act on these (not on lattice nodes), so contact happens exactly at the
+   * surface and small tools cannot slip between lattice nodes.
+   */
+  private proxyTet: Uint32Array = new Uint32Array(0);
+  private proxyBary: Float32Array = new Float32Array(0);
+
+  setSurfaceProxies(tet: Uint32Array, bary: Float32Array) {
+    this.proxyTet = tet;
+    this.proxyBary = bary;
+  }
+
+  private solveColliders() {
+    const { pos, invMass, tets, proxyTet, proxyBary } = this;
+    const useProxies = proxyTet.length > 0;
+    for (const c of this.colliders) {
+      c.depth = 0;
+      c.contacts = 0;
+      const n = useProxies ? proxyTet.length : this.count;
+      for (let p = 0; p < n; p++) {
+        // Current position of the sample point.
+        let x: number, y: number, z: number;
+        let t = 0;
+        if (useProxies) {
+          t = proxyTet[p] * 4;
+          const b0 = proxyBary[p * 4], b1 = proxyBary[p * 4 + 1], b2 = proxyBary[p * 4 + 2], b3 = proxyBary[p * 4 + 3];
+          const i0 = tets[t] * 3, i1 = tets[t + 1] * 3, i2 = tets[t + 2] * 3, i3 = tets[t + 3] * 3;
+          x = pos[i0] * b0 + pos[i1] * b1 + pos[i2] * b2 + pos[i3] * b3;
+          y = pos[i0 + 1] * b0 + pos[i1 + 1] * b1 + pos[i2 + 1] * b2 + pos[i3 + 1] * b3;
+          z = pos[i0 + 2] * b0 + pos[i1 + 2] * b1 + pos[i2 + 2] * b2 + pos[i3 + 2] * b3;
+        } else {
+          x = pos[p * 3]; y = pos[p * 3 + 1]; z = pos[p * 3 + 2];
+        }
+        // Desired displacement of the sample point.
+        let mx = 0, my: number, mz = 0, pen: number;
+        if (c.kind === 'sphere') {
+          const dx = x - c.x, dy = y - c.y, dz = z - c.z;
+          const d2 = dx * dx + dy * dy + dz * dz;
+          // Count near-touching points as contact (resting contact sits right at r).
+          const touch = c.r * 1.04;
+          if (d2 >= touch * touch) continue;
+          const d = Math.sqrt(d2);
+          pen = Math.max(0, c.r - d);
+          if (d > 1e-6) {
+            mx = (dx / d) * pen; my = (dy / d) * pen; mz = (dz / d) * pen;
+          } else {
+            my = -pen;
+          }
+        } else {
+          if (y <= c.y - 0.004) continue;
+          pen = Math.max(0, y - c.y);
+          my = -pen;
+        }
+        if (pen > c.depth) c.depth = pen;
+        c.contacts++;
+        if (!useProxies) {
+          pos[p * 3] += mx; pos[p * 3 + 1] += my; pos[p * 3 + 2] += mz;
+          continue;
+        }
+        // Distribute to the tet nodes (PBD for an embedded point): node k moves by
+        // b_k * w_k * m / sum(b_j^2 * w_j), which moves the point by exactly m.
+        let denom = 0;
+        for (let k = 0; k < 4; k++) {
+          const b = proxyBary[p * 4 + k];
+          denom += b * b * invMass[tets[t + k]];
+        }
+        if (denom < 1e-12) continue;
+        for (let k = 0; k < 4; k++) {
+          const node = tets[t + k];
+          const f = (proxyBary[p * 4 + k] * invMass[node]) / denom;
+          pos[node * 3] += mx * f;
+          pos[node * 3 + 1] += my * f;
+          pos[node * 3 + 2] += mz * f;
+        }
+      }
     }
   }
 

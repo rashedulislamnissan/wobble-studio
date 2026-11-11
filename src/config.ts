@@ -1,4 +1,4 @@
-﻿/** Global tuning constants. Material-specific values live in src/materials. */
+/** Global tuning constants. Material-specific values live in src/materials. */
 
 export const SIM = {
   /** Physics runs at a fixed rate regardless of display refresh. */
@@ -17,6 +17,10 @@ export const SIM = {
   staticFrictionSpeed: 0.03,
   /** Converts the material damping rate (1/s) into per-edge damping strength. */
   edgeDampingScale: 6,
+  /** Rolling resistance (1/s) at full contact; see SoftBody.applyContactDrag. */
+  contactDrag: 3.2,
+  /** Contact fraction that counts as full contact (a resting body touches ~10% of particles). */
+  contactDragShare: 8,
   /** Gentle air drag (per second) so tossed objects eventually rest. */
   airDrag: 0.04,
   /** Stage bounds: invisible walls keep objects in view. */
@@ -39,8 +43,8 @@ export const GRAB = {
 export const RENDER = {
   maxPixelRatio: 2,
   fov: 30,
-  cameraDistance: 7.2,
-  cameraHeight: 1.9,
+  cameraDistance: 6.2,
+  cameraHeight: 1.75,
   lookAtHeight: 0.42,
   shadowMapSize: 2048,
 } as const;

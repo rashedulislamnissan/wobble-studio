@@ -2,8 +2,9 @@
  * The studio runtime: renderer + stage + fixed loop + pointer routing + one specimen.
  * UI layers talk to it through a small API (setters and a per-frame stats callback).
  */
-import type { Material } from 'three/webgpu';
+import type { BufferGeometry, Material } from 'three/webgpu';
 import { SIM } from '../config';
+import { audio } from '../audio/engine';
 import { createRenderer, type RendererKind } from '../render/renderer';
 import { Stage } from '../render/stage';
 import type { SoftBodyParams } from '../sim/softbody';
@@ -24,10 +25,16 @@ export interface FrameStats {
 }
 
 export interface Quality {
+  /** Lattice cells across the object's largest dimension. */
   resolution: number;
   substeps: number;
-  renderDetail: number;
+  /** Render mesh grid resolution. */
+  meshResolution: number;
 }
+
+/** Landing speeds (units/s) mapped to sound intensity 0..1. */
+const IMPACT_MIN_SPEED = 0.7;
+const IMPACT_FULL_SPEED = 5;
 
 export class Runtime {
   readonly stage: Stage;
@@ -37,6 +44,8 @@ export class Runtime {
   specimen: Specimen | null = null;
   displayDensity = 1;
   onFrame: ((s: FrameStats) => void) | null = null;
+  /** Called once per physics step after the solver (special actions animate here). */
+  onStep: ((dt: number) => void) | null = null;
   private statsTimer = 0;
   private readonly footprint = { x: 0, z: 0, radius: 0.5, minY: 0 };
   quality: Quality;
@@ -49,10 +58,24 @@ export class Runtime {
     this.stage = new Stage(renderer);
     this.quality = Runtime.defaultQuality();
     this.loop = new FixedLoop({
-      step: (dt) => this.specimen?.step(dt),
+      step: (dt) => {
+        this.pointer.step(dt);
+        this.specimen?.step(dt);
+        this.onStep?.(dt);
+      },
       render: (alpha, frameMs, now) => this.render(alpha, frameMs, now),
     });
-    this.pointer = new PointerRouter(canvas, this.stage.camera, new HandTool());
+    this.pointer = new PointerRouter(
+      canvas,
+      this.stage.camera,
+      this.stage.scene,
+      {
+        sound: (e, i) => audio.play(e, i),
+        stiffness: () => this.specimen?.body.params.stiffness ?? 20,
+        firstGesture: () => audio.unlock(),
+      },
+      new HandTool(),
+    );
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -64,27 +87,39 @@ export class Runtime {
     return rt;
   }
 
-  /** Phones and low-core devices start lighter; the governor adjusts from there. */
+  /** Phones and low-core devices start lighter. */
   static defaultQuality(): Quality {
     const coarse = matchMedia('(pointer: coarse)').matches;
     const cores = navigator.hardwareConcurrency || 4;
-    if (coarse || cores <= 4) return { resolution: 8, substeps: 10, renderDetail: 20 };
-    return { resolution: SIM.latticeResolution, substeps: SIM.substeps, renderDetail: 28 };
+    if (coarse || cores <= 4) return { resolution: 8, substeps: 10, meshResolution: 52 };
+    return { resolution: SIM.latticeResolution, substeps: SIM.substeps, meshResolution: 72 };
   }
 
-  setSpecimen(shape: SpecimenShape, params: SoftBodyParams, material: Material, dropHeight = 0.5) {
-    this.pointer.cancel();
-    this.specimen?.dispose();
+  setSpecimen(
+    shape: SpecimenShape,
+    geometry: BufferGeometry,
+    params: SoftBodyParams,
+    material: Material,
+    dropHeight = 0.5,
+  ) {
+    this.pointer.detach();
+    const old = this.specimen;
     this.specimen = new Specimen(this.stage.scene, {
       shape,
+      geometry,
       params,
       material,
       resolution: this.quality.resolution,
-      renderDetail: this.quality.renderDetail,
       dropHeight,
     });
     this.specimen.body.substeps = this.quality.substeps;
     this.pointer.specimen = this.specimen;
+    // Aim at the middle of the object so tall and flat things both sit well in frame.
+    this.pointer.controls.target.y = Math.max(0.25, this.specimen.height * 0.45);
+    if (old) {
+      old.dispose();
+      (old.view.mesh.material as Material).dispose();
+    }
   }
 
   setParams(p: Partial<SoftBodyParams>) {
@@ -114,6 +149,11 @@ export class Runtime {
       s.render(alpha);
       const f = s.view.footprint(this.footprint);
       this.stage.updateContact(f.x, f.z, f.radius, f.minY);
+      const impact = s.body.takeImpact();
+      if (impact.speed > IMPACT_MIN_SPEED && impact.fraction > 0.01) {
+        const i = (impact.speed - IMPACT_MIN_SPEED) / (IMPACT_FULL_SPEED - IMPACT_MIN_SPEED);
+        audio.play('impact', i * Math.min(1, impact.fraction * 8));
+      }
     }
     this.renderer.render(this.stage.scene, this.stage.camera);
 

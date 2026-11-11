@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { buildLatticeTetMesh, tetVolume } from '../src/sim/lattice';
 import { SoftBody } from '../src/sim/softbody';
 import { embedPoints, skinPoints } from '../src/sim/embed';

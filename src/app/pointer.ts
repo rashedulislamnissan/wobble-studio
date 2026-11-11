@@ -2,11 +2,19 @@
  * Routes pointer input on the stage: the active tool gets first refusal; anything it
  * declines (empty space, or a second finger) goes to the orbit camera.
  */
-import { Raycaster, Vector2, type PerspectiveCamera } from 'three/webgpu';
+import { Raycaster, Vector2, type PerspectiveCamera, type Scene } from 'three/webgpu';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RENDER } from '../config';
-import type { Tool, ToolContext } from '../tools/tool';
+import type { SoundEvent } from '../audio/engine';
+import type { PointerSample, Tool, ToolContext } from '../tools/tool';
 import type { Specimen } from './specimen';
+
+export interface PointerHooks {
+  sound(event: SoundEvent, intensity: number): void;
+  stiffness(): number;
+  /** First interaction of the session (unlock audio). */
+  firstGesture(): void;
+}
 
 export class PointerRouter {
   readonly controls: OrbitControls;
@@ -14,15 +22,16 @@ export class PointerRouter {
   private readonly ndc = new Vector2();
   private activePointer: number | null = null;
   private readonly touches = new Set<number>();
+  private ctx: ToolContext | null = null;
   tool: Tool;
   specimen: Specimen | null = null;
-  /** Called on the first gesture (unlock audio, hide hints...). */
-  onFirstGesture: (() => void) | null = null;
   onGrabChange: ((active: boolean) => void) | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly camera: PerspectiveCamera,
+    private readonly scene: Scene,
+    private readonly hooks: PointerHooks,
     initialTool: Tool,
   ) {
     this.tool = initialTool;
@@ -52,51 +61,63 @@ export class PointerRouter {
     this.setCursor(this.tool.cursor.idle);
   }
 
-  /** Built lazily: class fields initialise before constructor parameter properties. */
-  private ctx: ToolContext | null = null;
-
   get context(): ToolContext {
-    if (this.ctx) return this.ctx;
-    this.ctx = {
-      camera: this.camera,
-      specimen: undefined as unknown as Specimen,
-      pick: (x, y) => {
-        if (!this.specimen) return null;
-        this.ndc.set(x, y);
-        this.raycaster.setFromCamera(this.ndc, this.camera);
-        const mesh = this.specimen.view.mesh;
-        mesh.geometry.computeBoundingSphere();
-        const hits = this.raycaster.intersectObject(mesh, false);
-        return hits[0] ? { point: hits[0].point.clone(), object: hits[0].object } : null;
-      },
-      ray: (x, y) => {
-        this.ndc.set(x, y);
-        this.raycaster.setFromCamera(this.ndc, this.camera);
-        return {
-          origin: this.raycaster.ray.origin.clone(),
-          direction: this.raycaster.ray.direction.clone(),
-        };
-      },
-    };
+    if (!this.ctx) {
+      this.ctx = {
+        camera: this.camera,
+        scene: this.scene,
+        specimen: undefined as unknown as Specimen,
+        stiffness: () => this.hooks.stiffness(),
+        sound: (e, i) => this.hooks.sound(e, i),
+        pick: (x, y) => {
+          if (!this.specimen) return null;
+          this.ndc.set(x, y);
+          this.raycaster.setFromCamera(this.ndc, this.camera);
+          const mesh = this.specimen.view.mesh;
+          mesh.geometry.computeBoundingSphere();
+          const hits = this.raycaster.intersectObject(mesh, false);
+          return hits[0] ? { point: hits[0].point.clone(), object: hits[0].object } : null;
+        },
+        ray: (x, y) => {
+          this.ndc.set(x, y);
+          this.raycaster.setFromCamera(this.ndc, this.camera);
+          return {
+            origin: this.raycaster.ray.origin.clone(),
+            direction: this.raycaster.ray.direction.clone(),
+          };
+        },
+      };
+    }
+    if (this.specimen) this.ctx.specimen = this.specimen;
     return this.ctx;
   }
 
   setTool(tool: Tool) {
     this.cancel();
+    if (this.specimen) this.tool.dispose?.(this.context);
     this.tool = tool;
     this.setCursor(tool.cursor.idle);
   }
 
+  /** Called when the specimen is about to change. */
+  detach() {
+    this.cancel();
+    if (this.specimen) this.tool.dispose?.(this.context);
+    this.specimen = null;
+  }
+
   cancel() {
-    if (this.activePointer !== null && this.specimen) {
-      this.context.specimen = this.specimen;
-      this.tool.cancel(this.context);
-      this.onGrabChange?.(false);
-    }
+    if (this.specimen) this.tool.cancel(this.context);
+    if (this.activePointer !== null) this.onGrabChange?.(false);
     this.activePointer = null;
   }
 
-  private sample(e: PointerEvent) {
+  /** Per physics step: let continuous tools animate. */
+  step(dt: number) {
+    if (this.specimen && this.tool.update) this.tool.update(this.context, dt);
+  }
+
+  private sample(e: PointerEvent): PointerSample {
     const r = this.canvas.getBoundingClientRect();
     return {
       ndcX: ((e.clientX - r.left) / r.width) * 2 - 1,
@@ -106,7 +127,7 @@ export class PointerRouter {
   }
 
   private onDown = (e: PointerEvent) => {
-    this.onFirstGesture?.();
+    this.hooks.firstGesture();
     if (e.pointerType === 'touch') this.touches.add(e.pointerId);
     // A second finger means "orbit/zoom": release the object and let the camera have it.
     if (this.touches.size > 1) {
@@ -114,7 +135,6 @@ export class PointerRouter {
       return;
     }
     if (e.button !== 0 || !this.specimen || this.activePointer !== null) return;
-    this.context.specimen = this.specimen;
     if (this.tool.down(this.context, this.sample(e))) {
       this.activePointer = e.pointerId;
       e.stopImmediatePropagation();
@@ -128,6 +148,7 @@ export class PointerRouter {
 
   private onHover = (e: PointerEvent) => {
     if (this.activePointer !== null || e.pointerType !== 'mouse' || e.buttons !== 0) return;
+    if (this.tool.anywhere) return this.setCursor(this.tool.cursor.hover);
     const s = this.sample(e);
     this.setCursor(this.context.pick(s.ndcX, s.ndcY) ? this.tool.cursor.hover : this.tool.cursor.idle);
   };

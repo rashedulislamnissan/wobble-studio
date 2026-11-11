@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Headless probe for solver tuning: prints settle behaviour and per-frame cost.
  * Run: npx vite-node scripts/sim-probe.ts  (or via vitest's runner: npx tsx)
  */

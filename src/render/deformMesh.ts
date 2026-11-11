@@ -1,4 +1,4 @@
-﻿/**
+/**
  * A render mesh that follows the soft body through a tet embedding.
  * Positions and normals are rewritten each frame; topology never changes here.
  */
@@ -9,7 +9,7 @@ import type { TetMesh } from '../sim/lattice';
 export class DeformableMesh {
   readonly mesh: Mesh;
   readonly geometry: BufferGeometry;
-  private readonly embedding: Embedding;
+  readonly embedding: Embedding;
   private readonly position: BufferAttribute;
   private readonly normal: BufferAttribute;
   private readonly index: ArrayLike<number>;
@@ -35,6 +35,8 @@ export class DeformableMesh {
     }
     this.geometry.setIndex(source.index);
     this.index = source.index.array;
+    // Rest-space positions for procedural surface detail that sticks to the material.
+    this.geometry.setAttribute('rest', new BufferAttribute(new Float32Array(restPositions), 3));
 
     let minY = Infinity;
     for (let i = 1; i < restPositions.length; i += 3) minY = Math.min(minY, restPositions[i]);
@@ -86,7 +88,7 @@ export class DeformableMesh {
   /**
    * Linear tets crease under large deformation. Smoothing the *displacement* (not the
    * position) removes the creases while leaving the rest shape untouched; rigid motion
-   * changes by only ~hÂ²Â·curvature.
+   * changes by only ~h²·curvature.
    */
   private smoothDisplacement(p: Float32Array) {
     const { rest, adjStart, adj } = this;

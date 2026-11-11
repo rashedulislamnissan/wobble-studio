@@ -12,6 +12,7 @@ export class HandTool implements Tool {
   private readonly plane = new Plane();
   private readonly target = new Vector3();
   private readonly forward = new Vector3();
+  private readonly start = new Vector3();
   private active = false;
 
   down(ctx: ToolContext, p: PointerSample): boolean {
@@ -22,6 +23,8 @@ export class HandTool implements Tool {
     this.forward.y *= 0.35;
     this.forward.normalize();
     this.plane.setFromNormalAndCoplanarPoint(this.forward, hit.point);
+    this.start.copy(hit.point);
+    this.target.copy(hit.point);
     const radius = ctx.specimen.shape.size * GRAB.radiusFraction;
     this.active = ctx.specimen.body.beginGrab(
       [hit.point.x, hit.point.y, hit.point.z],
@@ -47,6 +50,11 @@ export class HandTool implements Tool {
   }
 
   up(ctx: ToolContext) {
+    if (this.active) {
+      // A stretched release snaps back audibly; a gentle one stays quiet.
+      const stretch = this.target.distanceTo(this.start) / ctx.specimen.shape.size;
+      if (stretch > 0.12) ctx.sound('release', Math.min(1, stretch));
+    }
     this.cancel(ctx);
   }
 

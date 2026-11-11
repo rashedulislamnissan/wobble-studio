@@ -1,6 +1,6 @@
-﻿/**
+/**
  * The studio stage: tinted background with a soft spotlight halo, key/rim/fill lights,
- * a tinted shadow catcher and a soft contact shadow. Tint changes crossfade (Â§8.7).
+ * a tinted shadow catcher and a soft contact shadow. Tint changes crossfade (§8.7).
  */
 import {
   Color,
@@ -8,6 +8,7 @@ import {
   HemisphereLight,
   Mesh,
   MeshBasicNodeMaterial,
+  NeutralToneMapping,
   PerspectiveCamera,
   PlaneGeometry,
   PMREMGenerator,
@@ -21,10 +22,12 @@ import {
   length,
   mix,
   screenUV,
+  positionGeometry,
   smoothstep,
   uniform,
   uv,
   vec2,
+  vec4,
 } from 'three/tsl';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { RENDER } from '../config';
@@ -60,10 +63,21 @@ export class Stage {
     this.camera.position.set(0, RENDER.cameraHeight, RENDER.cameraDistance);
     this.camera.lookAt(0, RENDER.lookAtHeight, 0);
 
-    // Background: flat tint with a soft lighter halo behind the object.
+    // Background: flat tint with a soft lighter halo behind the object. Drawn as our own
+    // full-screen quad (not scene.background) so it skips tone mapping and matches the CSS
+    // tint exactly; only the object gets the filmic highlight rolloff.
     const centred = screenUV.sub(vec2(0.5, 0.52)).mul(vec2(this.uAspect, 1));
     const halo = smoothstep(float(0.08), float(0.62), length(centred));
-    this.scene.backgroundNode = mix(this.uSpotlight, this.uBackground, halo);
+    const bgMat = new MeshBasicNodeMaterial({ depthWrite: false, depthTest: false });
+    bgMat.vertexNode = vec4(positionGeometry.xy, 0.9999, 1);
+    bgMat.colorNode = mix(this.uSpotlight, this.uBackground, halo);
+    bgMat.toneMapped = false;
+    const backdrop = new Mesh(new PlaneGeometry(2, 2), bgMat);
+    backdrop.frustumCulled = false;
+    backdrop.renderOrder = -100;
+    this.scene.add(backdrop);
+    renderer.toneMapping = NeutralToneMapping;
+    renderer.toneMappingExposure = 1;
 
     // Image-based lighting for glossy highlights (procedural, no downloads).
     const pmrem = new PMREMGenerator(renderer);
@@ -91,7 +105,7 @@ export class Stage {
     s.bias = -0.0004;
     this.scene.add(this.keyLight);
 
-    // Rim light from behind separates the silhouette from the background (Â§8.5).
+    // Rim light from behind separates the silhouette from the background (§8.5).
     const rim = new DirectionalLight(0xffffff, 1.6);
     rim.position.set(1.5, 2.5, -4);
     this.scene.add(rim);
@@ -101,6 +115,7 @@ export class Stage {
     catcherMat.colorNode = this.uShadow;
     catcherMat.opacity = 0.55;
     catcherMat.transparent = true;
+    catcherMat.toneMapped = false;
     // Sized to the shadow camera frustum: beyond it VSM samples garbage (dotted artefacts).
     this.shadowCatcher = new Mesh(new PlaneGeometry(6, 6), catcherMat);
     this.shadowCatcher.rotation.x = -Math.PI / 2;
@@ -108,7 +123,7 @@ export class Stage {
     this.scene.add(this.shadowCatcher);
 
     // Contact shadow: soft radial darkening right under the object; fades with height.
-    const contactMat = new MeshBasicNodeMaterial({ transparent: true, depthWrite: false });
+    const contactMat = new MeshBasicNodeMaterial({ transparent: true, depthWrite: false, toneMapped: false });
     const r = length(uv().sub(vec2(0.5)).mul(2));
     contactMat.colorNode = this.uShadow;
     contactMat.opacityNode = smoothstep(float(1), float(0.0), r).pow(1.8).mul(this.uContact).mul(0.5);

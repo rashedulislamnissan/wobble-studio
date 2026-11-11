@@ -199,7 +199,7 @@
 }
 
 .title__desc {
-  margin: var(--space-4) 0 0;
+  margin: var(--space-6) 0 0;
   max-width: 30ch;
   font-size: var(--text-sm);
   color: var(--ink-soft);
@@ -729,4 +729,86 @@
   .panel {
     transition: none;
   }
+}
+
+/* ------------------------------------------------------------------ ?dev=tints */
+
+.tintboard {
+  padding: var(--space-7) var(--gutter);
+  max-width: 90rem;
+  margin: 0 auto;
+}
+
+.tintboard__title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 500;
+  font-size: var(--text-display);
+  line-height: var(--leading-tight);
+}
+
+.tintboard__intro {
+  max-width: 52ch;
+  color: var(--ink-soft);
+  margin: var(--space-4) 0 var(--space-6);
+}
+
+.tintboard__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: var(--space-3);
+}
+
+.tintcard {
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  border: 1px solid color-mix(in oklab, var(--shadow) 25%, transparent);
+}
+
+.tintcard__name {
+  font-size: var(--text-micro);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.tintcard__stage {
+  position: relative;
+  height: 7.5rem;
+  background: radial-gradient(circle at 50% 48%, var(--spot) 0 32%, transparent 62%);
+}
+
+.tintcard__obj {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 3.4rem;
+  height: 3.4rem;
+  margin: -2rem 0 0 -1.7rem;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, color-mix(in oklab, var(--obj) 55%, #fff) 0 12%, var(--obj) 45%);
+}
+
+.tintcard__shadow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4rem;
+  height: 0.8rem;
+  margin: 1.1rem 0 0 -2rem;
+  border-radius: 50%;
+  background: var(--shadow);
+  opacity: 0.45;
+  filter: blur(3px);
+}
+
+.tintcard__meta {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--label);
 }
