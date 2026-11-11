@@ -7,7 +7,7 @@ import { audio } from '../audio/engine';
 import * as R from '../audio/recipes';
 import { getMaterial } from '../materials';
 import { rangeValue, type MaterialDef } from '../materials/types';
-import { buildRenderGeometry, type RenderBuild } from '../objects/build';
+import { ObjectMesher } from '../objects/build';
 import { DEV_BLOB, OBJECTS, findObject } from '../objects/registry';
 import type { ObjectDef, Shape, ToolId, Variant } from '../objects/types';
 import { createJellyMaterial } from '../render/jellyMaterial';
@@ -16,6 +16,9 @@ import { computeTint } from '../tint/tint';
 import { HandTool } from '../tools/hand';
 import { PokeTool } from '../tools/poke';
 import { PressTool } from '../tools/press';
+import { KnifeTool } from '../tools/knife';
+import { CutterTool, ForkTool, HammerTool, SpoonTool } from '../tools/cutters';
+import type { StampShape } from '../ui/stageOverlay';
 import type { Tool } from '../tools/tool';
 import { h } from '../ui/dom';
 import { SpecimenPanel } from '../ui/panel';
@@ -30,16 +33,22 @@ const TOOL_INFO: Record<ToolId, { label: string; hint: string }> = {
   hand: { label: 'Hand', hint: 'Grab and drag. Let go to watch it wobble; flick to toss it.' },
   poke: { label: 'Poke', hint: 'Press a fingertip in. Hold to push deeper, drag to slide the dent.' },
   press: { label: 'Press', hint: 'Drag down anywhere to lower the plate. Let go to lift it.' },
-  knife: { label: 'Knife', hint: 'Draw a line across it to cut.' },
-  wavy: { label: 'Wavy', hint: 'Draw a line to cut a rippled edge.' },
-  cutter: { label: 'Cutter', hint: 'Tap to stamp out a shape.' },
-  fork: { label: 'Fork', hint: 'Tap to pierce, then drag to lift a piece.' },
-  spoon: { label: 'Spoon', hint: 'Drag across the top to scoop.' },
+  knife: { label: 'Knife', hint: 'Draw a line across it. The blade presses down along your line.' },
+  wavy: { label: 'Wavy', hint: 'Draw a line to cut with a rippled edge.' },
+  cutter: { label: 'Cutter', hint: 'Tap to stamp a shape straight through.' },
+  fork: { label: 'Fork', hint: 'Pierce a piece and lift it.' },
+  spoon: { label: 'Spoon', hint: 'Tap to scoop out a spoonful.' },
   hammer: { label: 'Hammer', hint: 'Tap to strike.' },
 };
 
-/** Tools whose mechanics exist so far; the rest stay hidden (§14). */
-const IMPLEMENTED: ToolId[] = ['hand', 'poke', 'press'];
+/** Tools whose mechanics exist; anything else stays hidden (§14). */
+const IMPLEMENTED: ToolId[] = ['hand', 'poke', 'press', 'knife', 'wavy', 'cutter', 'fork', 'spoon', 'hammer'];
+const STAMPS: { id: StampShape; label: string }[] = [
+  { id: 'star', label: 'Star' },
+  { id: 'heart', label: 'Heart' },
+  { id: 'flower', label: 'Flower' },
+  { id: 'round', label: 'Round' },
+];
 
 const POKE_OVERRIDES: Record<string, R.Recipe> = { puffy: R.puu, duck: R.squeak };
 
@@ -60,9 +69,20 @@ export async function startStudio(params: AppParams) {
   const app = document.getElementById('app')!;
   const rt = await Runtime.create(canvas, params.forceWebGL);
 
-  const tools: Partial<Record<ToolId, Tool>> = { hand: new HandTool(), poke: new PokeTool(), press: new PressTool() };
+  const cutter = new CutterTool();
+  const tools: Partial<Record<ToolId, Tool>> = {
+    hand: new HandTool(),
+    poke: new PokeTool(),
+    press: new PressTool(),
+    knife: new KnifeTool('knife'),
+    wavy: new KnifeTool('wavy', 0.028),
+    cutter,
+    fork: new ForkTool(),
+    spoon: new SpoonTool(),
+    hammer: new HammerTool(),
+  };
   const shapes = new Map<string, Shape>();
-  let build: RenderBuild | null = null;
+  let mesher: ObjectMesher | null = null;
   let loadToken = 0;
 
   // ---------------------------------------------------------------- scheduled actions
@@ -79,6 +99,9 @@ export async function startStudio(params: AppParams) {
     specimen: rt.specimen!,
     schedule: (delay, fn) => queue.push({ at: simTime + delay, fn }),
     sound: (e, i, recipe) => audio.play(e, i, recipe),
+    cut: (field, opts) => rt.pointer.context.cut(field, opts),
+    debris: (at, n, dir) => rt.pointer.context.debris(at, n, dir),
+    eye: rt.stage.camera.position.toArray() as [number, number, number],
   });
 
   // ---------------------------------------------------------------- UI
@@ -139,6 +162,24 @@ export async function startStudio(params: AppParams) {
     state.tool = id;
     rt.setTool(tools[id]!);
     readout.setHint(TOOL_INFO[id].hint);
+    panel.renderToolOptions(toolOptions());
+  }
+
+  function toolOptions() {
+    if (state.tool !== 'cutter') return null;
+    return {
+      label: 'Cutter shape',
+      options: STAMPS,
+      active: cutter.shape,
+      onChange: (id: string) => {
+        cutter.shape = id as StampShape;
+      },
+    };
+  }
+
+  function applyDebrisStyle() {
+    const m = material();
+    rt.debrisStyle = { kind: m.debris.kind, color: m.debris.color ?? state.variant.color };
   }
 
   function renderPanel() {
@@ -150,11 +191,13 @@ export async function startStudio(params: AppParams) {
       tools: available.map((id) => ({ id, ...TOOL_INFO[id] })),
       activeTool: state.tool,
       onTool: (id) => setTool(id as ToolId),
+      toolOptions: toolOptions(),
       variants: state.def.variants.map((v) => ({ id: v.id, label: v.label, color: v.color })),
       activeVariant: state.variant.id,
       onVariant: (id) => {
         state.variant = state.def.variants.find((v) => v.id === id)!;
-        build?.recolor(state.variant);
+        rt.specimen?.setVariant(state.variant);
+        applyDebrisStyle();
         applyTint(false);
         live.textContent = `${state.variant.label}.`;
       },
@@ -229,14 +272,16 @@ export async function startStudio(params: AppParams) {
     }
     if (token !== loadToken) return; // a newer selection won
 
-    build = buildRenderGeometry(shape, variant, rt.quality.meshResolution);
+    mesher = new ObjectMesher(shape, rt.quality.meshResolution, variant);
     const mat: Material =
       m.look.kind === 'jelly' ? createJellyMaterial(m.look.clarity).material : createSurfaceMaterial(m, shape.look);
     queue = [];
     rt.displayDensity = m.displayDensity;
-    rt.setSpecimen(shape, build.geometry, bodyParams(m), mat, first ? 0.9 : 0.55);
+    rt.setSpecimen(shape, mesher, variant, bodyParams(m), mat, first ? 0.9 : 0.55);
     rt.specimen!.setShowMesh(state.showMesh);
     audio.material = def.material;
+    rt.objectId = def.id;
+    applyDebrisStyle();
     audio.overrides = POKE_OVERRIDES[def.id] ? { poke: [POKE_OVERRIDES[def.id]] } : {};
     renderPanel();
     setTool(state.tool);

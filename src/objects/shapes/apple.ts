@@ -2,7 +2,7 @@
 import { CylinderGeometry, SphereGeometry } from 'three/webgpu';
 import { paint } from '../build';
 import { fbm, lin, mix, noise3, smoothstep, type RGB } from '../color';
-import { ellipsoid, intersect, smoothUnion, sphere, subtract, type Sdf } from '../sdf';
+import { ellipsoid, intersect, smoothUnion, sphere, subtract, type Sdf, len2, len3 } from '../sdf';
 import type { ShapeBuilder, Variant } from '../types';
 
 const body: Sdf = smoothUnion(
@@ -32,7 +32,25 @@ export const apple: ShapeBuilder = () => ({
   look: { roughness: 0.32, clearcoat: 0.55, detail: 'speckle' },
   color: (v) => {
     const p = palette(v);
-    return (x, y, z): RGB => {
+    const flesh = lin('#F7EED2');
+    const fleshDeep = lin('#EADBA9');
+    const seed = lin('#4A2C17');
+    return (x, y, z, _nx, _ny, _nz, depth = 0): RGB => {
+      if (depth > 0.014) {
+        // Inside: pale flesh, a faint core star, five seeds around the axis.
+        const r = len2(x, z);
+        const a = Math.atan2(z, x);
+        const coreY = smoothstep(0.18, 0.32, y) * smoothstep(0.7, 0.56, y);
+        let c = mix(flesh, fleshDeep, smoothstep(0.12, 0.05, r) * coreY * 0.8 + noise3(x * 30, y * 30, z * 30) * 0.12);
+        for (let k = 0; k < 5; k++) {
+          const sa = (k / 5) * Math.PI * 2;
+          const sx = Math.cos(sa) * 0.06, sz = Math.sin(sa) * 0.06;
+          if (len3((x - sx) * 1.6, (y - 0.43) * 0.9, (z - sz) * 1.6) < 0.045) c = seed;
+        }
+        void a;
+        // A thin band of skin colour right at the rim.
+        return mix(p.skin, c, smoothstep(0.014, 0.03, depth));
+      }
       const a = Math.atan2(z, x);
       // Vertical streaks that fade toward the shoulders and the base.
       // Fine, broken vertical streaks (many thin ones, not a few wide bands).

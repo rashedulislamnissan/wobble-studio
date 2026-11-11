@@ -15,6 +15,7 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     dampingAdjustable: true,
     firmnessLabels: SOFT_LABELS,
     dampingLabels: DAMP_LABELS,
+    debris: { kind: 'shimmer' },
     look: { kind: 'jelly', roughness: 0.14, clarity: 0.72, clearcoat: 1 },
   },
   'fruit-crisp': {
@@ -28,6 +29,7 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     dampingAdjustable: true,
     firmnessLabels: ['giving', 'crisp'],
     dampingLabels: ['ringing', 'dull'],
+    debris: { kind: 'chips', color: '#F3E6C2' },
     look: { kind: 'solid', roughness: 0.35, clearcoat: 0.6 },
   },
   'fruit-juicy': {
@@ -41,6 +43,7 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     dampingAdjustable: true,
     firmnessLabels: ['ripe', 'taut'],
     dampingLabels: ['bouncy', 'heavy'],
+    debris: { kind: 'juice' },
     look: { kind: 'subsurface', roughness: 0.3, clearcoat: 0.8 },
   },
   sponge: {
@@ -54,6 +57,7 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     dampingAdjustable: true,
     firmnessLabels: ['airy', 'dense'],
     dampingLabels: ['springy', 'slow'],
+    debris: { kind: 'crumbs' },
     look: { kind: 'solid', roughness: 0.85 },
   },
   cream: {
@@ -67,6 +71,7 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     dampingAdjustable: true,
     firmnessLabels: SOFT_LABELS,
     dampingLabels: DAMP_LABELS,
+    debris: { kind: 'smear' },
     look: { kind: 'subsurface', roughness: 0.22, clearcoat: 0.7 },
   },
   mochi: {
@@ -80,6 +85,7 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     dampingAdjustable: true,
     firmnessLabels: ['stretchy', 'chewy'],
     dampingLabels: ['bouncy', 'sticky'],
+    debris: { kind: 'powder', color: '#FFFFFF' },
     look: { kind: 'subsurface', roughness: 0.6 },
   },
   'firm-dairy': {
@@ -93,6 +99,7 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     dampingAdjustable: true,
     firmnessLabels: ['young', 'aged'],
     dampingLabels: ['springy', 'dense'],
+    debris: { kind: 'chips' },
     look: { kind: 'subsurface', roughness: 0.55 },
   },
   brittle: {
@@ -106,6 +113,7 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     dampingAdjustable: false,
     firmnessLabels: ['tempered', 'snappy'],
     dampingLabels: ['', ''],
+    debris: { kind: 'shards' },
     look: { kind: 'solid', roughness: 0.3, clearcoat: 0.4 },
   },
 };

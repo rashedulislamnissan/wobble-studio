@@ -2,11 +2,12 @@
  * Routes pointer input on the stage: the active tool gets first refusal; anything it
  * declines (empty space, or a second finger) goes to the orbit camera.
  */
-import { Raycaster, Vector2, type PerspectiveCamera, type Scene } from 'three/webgpu';
+import { MOUSE, Raycaster, Vector2, Vector3, type PerspectiveCamera, type Scene } from 'three/webgpu';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RENDER } from '../config';
 import type { SoundEvent } from '../audio/engine';
 import type { PointerSample, Tool, ToolContext } from '../tools/tool';
+import type { StageOverlay } from '../ui/stageOverlay';
 import type { Specimen } from './specimen';
 
 export interface PointerHooks {
@@ -14,6 +15,11 @@ export interface PointerHooks {
   stiffness(): number;
   /** First interaction of the session (unlock audio). */
   firstGesture(): void;
+  debris(at: [number, number, number], count: number, dir?: [number, number, number]): void;
+  objectId(): string;
+  overlay: StageOverlay;
+  /** A cut changed the pieces (stats, sounds). */
+  afterCut?(): void;
 }
 
 export class PointerRouter {
@@ -48,6 +54,8 @@ export class PointerRouter {
     this.controls.maxAzimuthAngle = 1.2;
     this.controls.rotateSpeed = 0.6;
     this.controls.zoomSpeed = 0.6;
+    // Right-drag also orbits, so cutting tools (which own left-drag) can still turn the view.
+    this.controls.mouseButtons = { LEFT: MOUSE.ROTATE, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.ROTATE };
     this.controls.update();
 
     // Capture phase on the canvas runs before OrbitControls' own listener.
@@ -69,13 +77,27 @@ export class PointerRouter {
         specimen: undefined as unknown as Specimen,
         stiffness: () => this.hooks.stiffness(),
         sound: (e, i) => this.hooks.sound(e, i),
+        debris: (at, n, dir) => this.hooks.debris(at, n, dir),
+        overlay: this.hooks.overlay,
+        objectId: () => this.hooks.objectId(),
+        cut: (field, opts) => {
+          if (!this.specimen) return false;
+          const ok = this.specimen.cut(field, opts);
+          if (ok) this.hooks.afterCut?.();
+          return ok;
+        },
+        toScreen: (x, y, z) => {
+          const v = new Vector3(x, y, z).project(this.camera);
+          const r = this.canvas.getBoundingClientRect();
+          return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height };
+        },
         pick: (x, y) => {
           if (!this.specimen) return null;
           this.ndc.set(x, y);
           this.raycaster.setFromCamera(this.ndc, this.camera);
-          const mesh = this.specimen.view.mesh;
-          mesh.geometry.computeBoundingSphere();
-          const hits = this.raycaster.intersectObject(mesh, false);
+          const meshes = this.specimen.meshes();
+          for (const m of meshes) m.geometry.computeBoundingSphere();
+          const hits = this.raycaster.intersectObjects(meshes, false);
           return hits[0] ? { point: hits[0].point.clone(), object: hits[0].object } : null;
         },
         ray: (x, y) => {
@@ -88,8 +110,9 @@ export class PointerRouter {
         },
       };
     }
-    if (this.specimen) this.ctx.specimen = this.specimen;
-    return this.ctx;
+    const ctx = this.ctx!;
+    if (this.specimen) ctx.specimen = this.specimen;
+    return ctx;
   }
 
   setTool(tool: Tool) {
@@ -122,6 +145,8 @@ export class PointerRouter {
     return {
       ndcX: ((e.clientX - r.left) / r.width) * 2 - 1,
       ndcY: -((e.clientY - r.top) / r.height) * 2 + 1,
+      x: e.clientX,
+      y: e.clientY,
       t: performance.now(),
     };
   }
@@ -150,7 +175,9 @@ export class PointerRouter {
     if (this.activePointer !== null || e.pointerType !== 'mouse' || e.buttons !== 0) return;
     if (this.tool.anywhere) return this.setCursor(this.tool.cursor.hover);
     const s = this.sample(e);
-    this.setCursor(this.context.pick(s.ndcX, s.ndcY) ? this.tool.cursor.hover : this.tool.cursor.idle);
+    const over = !!this.context.pick(s.ndcX, s.ndcY);
+    this.setCursor(over ? this.tool.cursor.hover : this.tool.cursor.idle);
+    this.tool.hover?.(this.context, s, over);
   };
 
   private onMove = (e: PointerEvent) => {

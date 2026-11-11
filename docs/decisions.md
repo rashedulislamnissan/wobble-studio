@@ -97,3 +97,35 @@ Static build, relative asset base (`base: './'`) so the same output works on Git
 (sub-path) and Cloudflare Pages (root). GitHub Pages is free for public repositories, needs no
 card, and deploys on every push to `main` through `.github/workflows/deploy.yml`. Cloudflare Pages
 remains a drop-in alternative (also free, no card): build command `npm run build`, output `dist`.
+
+---
+
+## D5 — Cutting: tet-labelled topology split + per-piece SDF remeshing
+
+**Date:** 2026-11-11 · **Phase:** 4
+
+The spec suggests building cutting in levels (pre-segmented chunks → constraint cutting →
+true slicing). Because every object is an SDF on a tet lattice, we went straight to a robust
+form of Level 2 with exact cut faces:
+
+1. **Classify tets** by evaluating the cut field (plane, rippled plane, cutter prism, scoop
+   sphere) at each tet's *current* centroid. Pieces whose tets fall on both sides split.
+2. **Split topology** (`src/sim/topology.ts`): nodes shared by tets of different sides are
+   duplicated; connected components become pieces (a cut through a ring leaves two arcs).
+   Pure function, unit-tested; volume is conserved exactly.
+3. **Exact faces:** each piece keeps a rest-space SDF = original shape ∩ every cut that made it.
+   The world-space cut is mapped to rest space through the piece's best-fit rigid transform
+   (shape matching, Müller 2016 rotation extraction). The piece is remeshed with surface nets,
+   so the cap is perfectly flat (or rippled, or star-shaped). Cut faces get *interior* colour:
+   colour functions receive `depth = -sdf(p)` and paint flesh, sponge layers or core there.
+4. **Physics continues** on one solver: pieces collide through a spatial hash on nodes, with a
+   capped push per substep so fresh seams ease apart instead of exploding.
+5. **Housekeeping:** at most 24 pieces; slivers (< 10 tets a side) are not created; shards under
+   1.2 % of the original volume fade out; scoops and bites fade upward. Mass and volume
+   readouts track what is left.
+
+**Cost.** A cut is a topology rebuild plus remeshing of the two new pieces: ~25–110 ms on a
+desktop (embedding uses precomputed tet inverses and a capped neighbourhood search; the
+mesher samples narrow-band). The knife's 0.26 s press animation masks most of it.
+**Follow-up:** time-slice meshing across the press frames (generator-based mesher) so phones
+never hitch.

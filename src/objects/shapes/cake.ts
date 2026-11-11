@@ -6,7 +6,7 @@ import { LatheGeometry, SphereGeometry, Vector2, type BufferGeometry } from 'thr
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { paint } from '../build';
 import { lin, mix, noise3, smoothstep, type RGB } from '../color';
-import { smoothUnion, sphere, type Sdf } from '../sdf';
+import { smoothUnion, sphere, type Sdf, len2 } from '../sdf';
 import type { ShapeBuilder, Variant } from '../types';
 
 const R = 0.86;
@@ -29,9 +29,9 @@ function pie(px: number, pz: number) {
   const sc = Math.sin(HALF_ANGLE), cc = Math.cos(HALF_ANGLE);
   const qx = Math.abs(pz);
   const qy = px;
-  const l = Math.hypot(qx, qy) - R;
+  const l = len2(qx, qy) - R;
   const t = Math.min(R, Math.max(0, qx * sc + qy * cc));
-  const m = Math.hypot(qx - sc * t, qy - cc * t);
+  const m = len2(qx - sc * t, qy - cc * t);
   return Math.max(l, m * Math.sign(cc * qx - sc * qy));
 }
 
@@ -39,7 +39,7 @@ const wedge: Sdf = (x, y, z) => {
   const [lx, lz] = toLocal(x, z);
   const d2 = pie(lx, lz) + ROUND;
   const dy = Math.abs(y - H / 2) - H / 2 + ROUND;
-  return Math.min(Math.max(d2, dy), 0) + Math.hypot(Math.max(d2, 0), Math.max(dy, 0)) - ROUND;
+  return Math.min(Math.max(d2, dy), 0) + len2(Math.max(d2, 0), Math.max(dy, 0)) - ROUND;
 };
 
 const ROSETTE: [number, number, number] = [R * 0.68, H + 0.035, 0];
@@ -75,7 +75,7 @@ export const cake: ShapeBuilder = () => ({
     const p = palette(v);
     return (x, y, z): RGB => {
       const [lx, lz] = toLocal(x, z);
-      const r = Math.hypot(lx, lz);
+      const r = len2(lx, lz);
       if (y > H - 0.03 || r > R - 0.035) return p.frosting;
       const layer = LAYERS.find((l) => y < l.to)!;
       if (layer.kind === 'cream') return p.cream;

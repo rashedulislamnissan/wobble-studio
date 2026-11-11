@@ -6,13 +6,18 @@
  */
 import type { SoundEvent } from '../audio/engine';
 import * as R from '../audio/recipes';
-import type { Specimen } from './specimen';
+import type { CutOptions, Field, Specimen } from './specimen';
+import { len2, len3 } from '../objects/sdf';
 
 export interface ActionContext {
   specimen: Specimen;
   /** Run `fn` after `delay` seconds of simulated time. */
   schedule(delay: number, fn: () => void): void;
   sound(event: SoundEvent, intensity: number, recipe?: R.Recipe): void;
+  cut(field: Field, opts?: CutOptions): boolean;
+  debris(at: [number, number, number], count: number, dir?: [number, number, number]): void;
+  /** Camera position (bites are taken from the side facing the viewer). */
+  eye: [number, number, number];
 }
 
 type Action = (c: ActionContext) => void;
@@ -50,7 +55,61 @@ function spin(s: Specimen, omega: number) {
   }
 }
 
+/** World-space bounds of the current body. */
+function worldBounds(s: Specimen) {
+  const p = s.body.pos;
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < p.length; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      min[k] = Math.min(min[k], p[i + k]);
+      max[k] = Math.max(max[k], p[i + k]);
+    }
+  }
+  return { min, max };
+}
+
 export const ACTIONS: Record<string, Action> = {
+  bite: ({ specimen: s, cut, sound, debris, eye }) => {
+    // Take a bite from the upper edge facing the viewer.
+    const com = s.body.centerOfMass();
+    const { max } = worldBounds(s);
+    const dx = eye[0] - com[0], dz = eye[2] - com[2];
+    const l = len2(dx, dz) || 1;
+    const reach = s.shape.size * 0.42;
+    const c = [com[0] + (dx / l) * reach, max[1] - s.height * 0.22, com[2] + (dz / l) * reach];
+    const r = s.shape.size * 0.21;
+    // Slightly oval, like a real bite.
+    const field: Field = (x, y, z) => len3((x - c[0]) * 0.9, (y - c[1]) * 1.15, (z - c[2]) * 0.9) - r;
+    if (cut(field, { removeInside: true, lift: 0.3, separation: 0 })) {
+      sound('break', 0.8, R.crunch);
+      debris([c[0], c[1], c[2]], 16, [dx / l, 1, dz / l]);
+    }
+  },
+  crumble: ({ specimen: s, schedule, sound, debris }) => {
+    const { min, max } = worldBounds(s);
+    for (let k = 0; k < 4; k++) {
+      schedule(k * 0.12, () => {
+        const x = min[0] + Math.random() * (max[0] - min[0]);
+        const z = min[2] + Math.random() * (max[2] - min[2]);
+        debris([x, max[1] * (0.4 + Math.random() * 0.5), z], 14, [0, 0.4, 0]);
+      });
+    }
+    s.pulse(-0.8);
+    sound('action', 0.7, R.crumble);
+  },
+  slice: ({ specimen: s, cut, sound, debris }) => {
+    // A clean slice off the end, along the longest horizontal axis.
+    const { min, max } = worldBounds(s);
+    const alongX = max[0] - min[0] >= max[2] - min[2];
+    const n: [number, number, number] = alongX ? [1, 0, 0] : [0, 0, 1];
+    const at = alongX ? max[0] - (max[0] - min[0]) * 0.22 : max[2] - (max[2] - min[2]) * 0.22;
+    const field: Field = (x, _y, z) => (alongX ? x : z) - at;
+    if (cut(field, { normal: n, separation: 0.5 })) {
+      sound('slice', 0.6);
+      debris(alongX ? [at, max[1] * 0.6, (min[2] + max[2]) / 2] : [(min[0] + max[0]) / 2, max[1] * 0.6, at], 10, [0, 1, 0]);
+    }
+  },
   kick: ({ specimen: s, schedule, sound }) => {
     const tail = s.region('tail');
     s.impulse([0, 3.4, 0], tail);

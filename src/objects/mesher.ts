@@ -5,8 +5,21 @@
  */
 import { BufferAttribute, BufferGeometry } from 'three/webgpu';
 import type { Sdf, Vec3Tuple } from '../sim/lattice';
+import { len3 } from './sdf';
 
-export type ColorFn = (x: number, y: number, z: number, nx: number, ny: number, nz: number) => [number, number, number];
+/**
+ * Vertex colour at a surface point. `depth` is how far inside the original shape the point
+ * is: 0 on the skin, > 0 on faces exposed by cutting (shapes colour their interior there).
+ */
+export type ColorFn = (
+  x: number,
+  y: number,
+  z: number,
+  nx: number,
+  ny: number,
+  nz: number,
+  depth?: number,
+) => [number, number, number];
 
 export interface MeshOptions {
   /** Grid cells across the largest dimension. */
@@ -26,11 +39,42 @@ export function meshSdf(sdf: Sdf, min: Vec3Tuple, max: Vec3Tuple, opts: MeshOpti
   const ny = Math.ceil((max[1] - min[1]) / h) + 2 * pad + 1;
   const nz = Math.ceil((max[2] - min[2]) / h) + 2 * pad + 1;
 
-  // Sample the field at grid nodes.
+  // Sample the field at grid nodes, narrow-band: a coarse pass first, then exact values
+  // only in blocks the surface can pass through. Far blocks just keep their sign, which is
+  // all surface nets needs there. ~10x fewer SDF evaluations for typical shapes.
   const field = new Float32Array(nx * ny * nz);
-  for (let k = 0; k < nz; k++)
-    for (let j = 0; j < ny; j++)
-      for (let i = 0; i < nx; i++) field[i + nx * (j + ny * k)] = sdf(o[0] + i * h, o[1] + j * h, o[2] + k * h);
+  const B = 4;
+  const cx = Math.ceil((nx - 1) / B) + 1, cy = Math.ceil((ny - 1) / B) + 1, cz = Math.ceil((nz - 1) / B) + 1;
+  const coarse = new Float32Array(cx * cy * cz);
+  for (let k = 0; k < cz; k++)
+    for (let j = 0; j < cy; j++)
+      for (let i = 0; i < cx; i++) coarse[i + cx * (j + cy * k)] = sdf(o[0] + i * B * h, o[1] + j * B * h, o[2] + k * B * h);
+  // A block is safe to skip if every corner is farther from the surface than the block
+  // diagonal (SDFs are 1-Lipschitz, so no surface can cross it).
+  const reach = B * h * Math.sqrt(3) * 1.05;
+  const bx = cx - 1, by = cy - 1, bz = cz - 1;
+  const active = new Uint8Array(bx * by * bz);
+  for (let bk = 0; bk < cz - 1; bk++) {
+    for (let bj = 0; bj < cy - 1; bj++) {
+      for (let bi = 0; bi < cx - 1; bi++) {
+        let minAbs = Infinity;
+        let sign = 0;
+        for (let c = 0; c < 8; c++) {
+          const v = coarse[bi + (c & 1) + cx * (bj + ((c >> 1) & 1) + cy * (bk + ((c >> 2) & 1)))];
+          minAbs = Math.min(minAbs, Math.abs(v));
+          sign = v;
+        }
+        const skip = minAbs > reach;
+        active[bi + bx * (bj + by * bk)] = skip ? 0 : 1;
+        for (let k = bk * B; k <= Math.min(nz - 1, bk * B + B); k++)
+          for (let j = bj * B; j <= Math.min(ny - 1, bj * B + B); j++)
+            for (let i = bi * B; i <= Math.min(nx - 1, bi * B + B); i++) {
+              const idx = i + nx * (j + ny * k);
+              field[idx] = skip ? sign : sdf(o[0] + i * h, o[1] + j * h, o[2] + k * h);
+            }
+      }
+    }
+  }
   const F = (i: number, j: number, k: number) => field[i + nx * (j + ny * k)];
 
   // One vertex per cell that straddles the surface.
@@ -43,9 +87,13 @@ export function meshSdf(sdf: Sdf, min: Vec3Tuple, max: Vec3Tuple, opts: MeshOpti
     [0, 4], [1, 5], [2, 6], [3, 7],
   ];
   const corner = new Float32Array(8);
-  for (let k = 0; k < nz - 1; k++) {
-    for (let j = 0; j < ny - 1; j++) {
-      for (let i = 0; i < nx - 1; i++) {
+  // Only blocks the surface can cross (uniform blocks have no sign changes).
+  for (let bb = 0; bb < active.length; bb++) {
+    if (!active[bb]) continue;
+    const bi = bb % bx, bj = Math.floor(bb / bx) % by, bk = Math.floor(bb / (bx * by));
+    for (let k = bk * B; k < Math.min(nz - 1, bk * B + B); k++)
+    for (let j = bj * B; j < Math.min(ny - 1, bj * B + B); j++)
+      for (let i = bi * B; i < Math.min(nx - 1, bi * B + B); i++) {
         let mask = 0;
         for (let b = 0; b < 8; b++) {
           const v = F(i + (b & 1), j + ((b >> 1) & 1), k + ((b >> 2) & 1));
@@ -66,7 +114,6 @@ export function meshSdf(sdf: Sdf, min: Vec3Tuple, max: Vec3Tuple, opts: MeshOpti
         cellVert[C(i, j, k)] = pos.length / 3;
         pos.push(o[0] + (i + sx / cnt) * h, o[1] + (j + sy / cnt) * h, o[2] + (k + sz / cnt) * h);
       }
-    }
   }
 
   // Quads for every grid edge crossing the surface.
@@ -76,13 +123,18 @@ export function meshSdf(sdf: Sdf, min: Vec3Tuple, max: Vec3Tuple, opts: MeshOpti
     // Split along the shorter diagonal for nicer triangles.
     const dAC = dist2(pos, a, c);
     const dBD = dist2(pos, b, d);
-    const tris = dAC < dBD ? [a, b, c, a, c, d] : [a, b, d, b, c, d];
-    if (flip) for (let t = 0; t < 6; t += 3) [tris[t + 1], tris[t + 2]] = [tris[t + 2], tris[t + 1]];
-    index.push(...tris);
+    if (dAC < dBD) {
+      if (flip) index.push(a, c, b, a, d, c);
+      else index.push(a, b, c, a, c, d);
+    } else if (flip) index.push(a, d, b, b, d, c);
+    else index.push(a, b, d, b, c, d);
   };
-  for (let k = 1; k < nz - 1; k++) {
-    for (let j = 1; j < ny - 1; j++) {
-      for (let i = 1; i < nx - 1; i++) {
+  for (let bb = 0; bb < active.length; bb++) {
+    if (!active[bb]) continue;
+    const bi = bb % bx, bj = Math.floor(bb / bx) % by, bk = Math.floor(bb / (bx * by));
+    for (let k = Math.max(1, bk * B); k < Math.min(nz - 1, bk * B + B); k++)
+    for (let j = Math.max(1, bj * B); j < Math.min(ny - 1, bj * B + B); j++)
+      for (let i = Math.max(1, bi * B); i < Math.min(nx - 1, bi * B + B); i++) {
         const inside = F(i, j, k) < 0;
         if (i < nx - 1 && inside !== F(i + 1, j, k) < 0) {
           quad(cellVert[C(i, j - 1, k - 1)], cellVert[C(i, j, k - 1)], cellVert[C(i, j, k)], cellVert[C(i, j - 1, k)], !inside);
@@ -94,22 +146,22 @@ export function meshSdf(sdf: Sdf, min: Vec3Tuple, max: Vec3Tuple, opts: MeshOpti
           quad(cellVert[C(i - 1, j - 1, k)], cellVert[C(i, j - 1, k)], cellVert[C(i, j, k)], cellVert[C(i - 1, j, k)], !inside);
         }
       }
-    }
   }
 
   // Project vertices onto the surface (Newton steps along the numerical gradient).
-  const steps = opts.project ?? 2;
+  const steps = opts.project ?? 1;
   const e = h * 0.25;
   const normals = new Float32Array(pos.length);
   for (let v = 0; v < pos.length; v += 3) {
     let x = pos[v], y = pos[v + 1], z = pos[v + 2];
     let gx = 0, gy = 1, gz = 0;
     for (let s = 0; s <= steps; s++) {
+      // Forward differences: 4 evaluations per step instead of 7.
       const d = sdf(x, y, z);
-      gx = sdf(x + e, y, z) - sdf(x - e, y, z);
-      gy = sdf(x, y + e, z) - sdf(x, y - e, z);
-      gz = sdf(x, y, z + e) - sdf(x, y, z - e);
-      const gl = Math.hypot(gx, gy, gz) || 1;
+      gx = sdf(x + e, y, z) - d;
+      gy = sdf(x, y + e, z) - d;
+      gz = sdf(x, y, z + e) - d;
+      const gl = len3(gx, gy, gz) || 1;
       gx /= gl; gy /= gl; gz /= gl;
       if (s === steps) break;
       // Clamp the step so a bad gradient near creases cannot fling a vertex.

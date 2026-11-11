@@ -1,10 +1,10 @@
 /**
  * A render mesh that follows the soft body through a tet embedding.
- * Positions and normals are rewritten each frame; topology never changes here.
+ * Positions and normals are rewritten each frame. When the body is cut, untouched pieces
+ * keep their mesh and just remap tet indices (remapTets); split pieces get new meshes.
  */
 import { BufferAttribute, BufferGeometry, DynamicDrawUsage, Mesh, type Material } from 'three/webgpu';
-import { embedPoints, skinPoints, type Embedding } from '../sim/embed';
-import type { TetMesh } from '../sim/lattice';
+import { skinPoints, type Embedding } from '../sim/embed';
 
 export class DeformableMesh {
   readonly mesh: Mesh;
@@ -13,15 +13,16 @@ export class DeformableMesh {
   private readonly position: BufferAttribute;
   private readonly normal: BufferAttribute;
   private readonly index: ArrayLike<number>;
-  private readonly tets: Uint32Array;
+  private tets: Uint32Array;
   /** Lowest rest-space y of the render surface (for floor offset). */
   readonly restMinY: number;
 
-  constructor(source: BufferGeometry, tetMesh: TetMesh, material: Material) {
+  constructor(source: BufferGeometry, embedding: Embedding, tets: Uint32Array, material: Material) {
     if (!source.index) throw new Error('DeformableMesh needs an indexed geometry');
     const restPositions = source.getAttribute('position').array as Float32Array;
-    this.embedding = embedPoints(restPositions, tetMesh);
-    this.tets = tetMesh.tets;
+    this.embedding = embedding;
+    this.tets = tets;
+    this.source = source;
 
     this.geometry = new BufferGeometry();
     this.position = new BufferAttribute(new Float32Array(restPositions), 3);
@@ -45,28 +46,36 @@ export class DeformableMesh {
     this.rest = new Float32Array(restPositions);
     this.disp = new Float32Array(restPositions.length);
     this.dispTmp = new Float32Array(restPositions.length);
-    // Vertex adjacency in CSR form, from triangle edges.
+    // Vertex adjacency in CSR form from triangle edges. Interior edges appear twice (once
+    // per adjacent triangle), which weights every neighbour equally: fine for smoothing.
     const n = restPositions.length / 3;
-    const sets: Set<number>[] = Array.from({ length: n }, () => new Set<number>());
     const idx = source.index.array;
+    this.adjStart = new Uint32Array(n + 1);
+    for (let f = 0; f < idx.length; f++) this.adjStart[idx[f] + 1] += 2;
+    for (let v = 0; v < n; v++) this.adjStart[v + 1] += this.adjStart[v];
+    this.adj = new Uint32Array(this.adjStart[n]);
+    const fill = this.adjStart.slice(0, n);
     for (let f = 0; f < idx.length; f += 3) {
       const a = idx[f], b = idx[f + 1], c = idx[f + 2];
-      sets[a].add(b).add(c);
-      sets[b].add(a).add(c);
-      sets[c].add(a).add(b);
-    }
-    this.adjStart = new Uint32Array(n + 1);
-    for (let v = 0; v < n; v++) this.adjStart[v + 1] = this.adjStart[v] + sets[v].size;
-    this.adj = new Uint32Array(this.adjStart[n]);
-    for (let v = 0; v < n; v++) {
-      let k = this.adjStart[v];
-      for (const j of sets[v]) this.adj[k++] = j;
+      this.adj[fill[a]++] = b; this.adj[fill[a]++] = c;
+      this.adj[fill[b]++] = a; this.adj[fill[b]++] = c;
+      this.adj[fill[c]++] = a; this.adj[fill[c]++] = b;
     }
 
     this.mesh = new Mesh(this.geometry, material);
     this.mesh.castShadow = true;
     this.mesh.frustumCulled = false;
     this.computeNormals();
+  }
+
+  /** Source geometry (rest positions, colours) — used for recolouring. */
+  readonly source: BufferGeometry;
+
+  /** After a topology rebuild: point embedded tets at their new indices. */
+  remapTets(tetMap: Int32Array, tets: Uint32Array) {
+    const t = this.embedding.tet;
+    for (let i = 0; i < t.length; i++) t[i] = Math.max(0, tetMap[t[i]]);
+    this.tets = tets;
   }
 
   update(particles: ArrayLike<number>) {

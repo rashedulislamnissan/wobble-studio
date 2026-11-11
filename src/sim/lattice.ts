@@ -65,7 +65,7 @@ export function seededRandom(seed: number) {
 }
 
 /** Shuffle fixed-size records in place (Gauss-Seidel order without spatial sweep bias). */
-function shuffleRecords(arr: Uint32Array, stride: number, rand: () => number) {
+export function shuffleRecords(arr: Uint32Array, stride: number, rand: () => number) {
   const n = arr.length / stride;
   const tmp = new Uint32Array(stride);
   for (let i = n - 1; i > 0; i--) {

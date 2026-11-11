@@ -1,14 +1,19 @@
 /**
  * Hand: pinch-grab a soft region and drag; release to let it wobble or toss it.
  * The drag plane faces the camera through the grab point, so motion follows the pointer.
+ * Only the piece you clicked is grabbed, so cut pieces can be picked up one by one.
  */
-import { Plane, Vector3 } from 'three/webgpu';
+import { Plane, Vector3, type Mesh } from 'three/webgpu';
 import { GRAB, SIM } from '../config';
 import type { PointerSample, Tool, ToolContext } from './tool';
 
 export class HandTool implements Tool {
-  readonly id = 'hand';
+  readonly id: string = 'hand';
   readonly cursor = { idle: 'default', hover: 'grab', active: 'grabbing' };
+  /** Grab radius as a fraction of object size. */
+  protected radiusFraction: number = GRAB.radiusFraction;
+  /** Fork: a sharp pierce sound on grab. */
+  protected pierce = false;
   private readonly plane = new Plane();
   private readonly target = new Vector3();
   private readonly forward = new Vector3();
@@ -25,12 +30,15 @@ export class HandTool implements Tool {
     this.plane.setFromNormalAndCoplanarPoint(this.forward, hit.point);
     this.start.copy(hit.point);
     this.target.copy(hit.point);
-    const radius = ctx.specimen.shape.size * GRAB.radiusFraction;
+    const radius = ctx.specimen.shape.size * this.radiusFraction;
+    const piece = ctx.specimen.pieceOf(hit.object as Mesh);
     this.active = ctx.specimen.body.beginGrab(
       [hit.point.x, hit.point.y, hit.point.z],
       radius,
       GRAB.compliance,
+      ctx.specimen.pieceCount > 1 ? piece : -1,
     );
+    if (this.active && this.pierce) ctx.sound('poke', 0.5);
     return this.active;
   }
 

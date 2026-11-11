@@ -30,6 +30,8 @@ export interface PanelSpec {
   tools: ToolOption[];
   activeTool: string;
   onTool: (id: string) => void;
+  /** Extra choices for the active tool (cutter shapes). */
+  toolOptions?: { label: string; options: { id: string; label: string }[]; active: string; onChange: (id: string) => void } | null;
   variants: VariantOption[];
   activeVariant: string;
   onVariant: (id: string) => void;
@@ -111,7 +113,11 @@ export class SpecimenPanel {
       toolGroup.append(btn);
     }
     radioKeys(toolGroup);
-    this.body.append(section('Tool', toolGroup));
+    const toolSection = section('Tool', toolGroup);
+    this.optionsSlot = h('div.tool-options');
+    toolSection.append(this.optionsSlot);
+    this.body.append(toolSection);
+    this.renderToolOptions(spec.toolOptions ?? null);
     const active = spec.tools.find((t) => t.id === spec.activeTool);
     this.handleTool.textContent = active?.label ?? '';
 
@@ -176,6 +182,35 @@ export class SpecimenPanel {
       spec.paused ? 'Resume' : 'Pause',
     );
     this.body.append(h('div.panel__section.panel__section--foot', {}, toggles, this.pauseBtn));
+  }
+
+  private optionsSlot: HTMLElement | null = null;
+
+  renderToolOptions(opts: PanelSpec['toolOptions']) {
+    const slot = this.optionsSlot;
+    if (!slot) return;
+    clear(slot);
+    if (!opts) return;
+    const group = h('div.chips', { role: 'radiogroup', 'aria-label': opts.label });
+    for (const o of opts.options) {
+      const chip = h(
+        'button.chip',
+        {
+          type: 'button',
+          role: 'radio',
+          'aria-checked': String(o.id === opts.active),
+          onclick: () => {
+            group.querySelectorAll('.chip').forEach((el) => el.setAttribute('aria-checked', 'false'));
+            chip.setAttribute('aria-checked', 'true');
+            opts.onChange(o.id);
+          },
+        },
+        o.label,
+      );
+      group.append(chip);
+    }
+    radioKeys(group);
+    slot.append(group);
   }
 
   setActiveTool(id: string, label?: string) {

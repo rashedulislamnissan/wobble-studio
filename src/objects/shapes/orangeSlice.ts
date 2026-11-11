@@ -8,6 +8,7 @@ import { Color } from 'three/webgpu';
 import { atan, float, fract, length, max, min, mix as tmix, smoothstep as ss, uniform, vec2, type attribute } from 'three/tsl';
 import type { Sdf } from '../sdf';
 import type { ShapeBuilder, Variant } from '../types';
+import { len2 } from '../sdf';
 
 const R = 0.62;
 const HALF_T = 0.15;
@@ -20,9 +21,9 @@ const toLocal = (x: number, z: number): [number, number] => [cos * x - sin * z, 
 
 const local: Sdf = (x, y, z) => {
   // Rounded disc in the XY plane, cut in half at y = 0 (also rounded).
-  const dr = Math.hypot(x, y) - R + ROUND;
+  const dr = len2(x, y) - R + ROUND;
   const dz = Math.abs(z) - HALF_T + ROUND;
-  const disc = Math.min(Math.max(dr, dz), 0) + Math.hypot(Math.max(dr, 0), Math.max(dz, 0)) - ROUND;
+  const disc = Math.min(Math.max(dr, dz), 0) + len2(Math.max(dr, 0), Math.max(dz, 0)) - ROUND;
   const cut = -y - 0.0;
   const k = 0.035;
   const h = Math.max(k - Math.abs(-disc - cut), 0) / k;
@@ -61,7 +62,7 @@ export const orangeSlice: ShapeBuilder = () => ({
     const p = palette(v);
     return (x, y, z): RGB => {
       const [lx, lz] = toLocal(x, z);
-      const r = Math.hypot(lx, y);
+      const r = len2(lx, y);
       const onFace = Math.abs(lz) > HALF_T - ROUND * 0.6;
       // Peel: the outer ring, and anywhere off the flat faces.
       // Rind/flesh switch sits under the per-pixel pith ring, which hides its stair-steps.
@@ -79,7 +80,7 @@ export const orangeSlice: ShapeBuilder = () => ({
   regions: {
     rind: (x, y, z) => {
       const [lx] = toLocal(x, z);
-      return smoothstep(R - 0.15, R - 0.02, Math.hypot(lx, y));
+      return smoothstep(R - 0.15, R - 0.02, len2(lx, y));
     },
   },
 });

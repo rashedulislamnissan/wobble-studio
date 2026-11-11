@@ -44,9 +44,32 @@ if (tool) {
   const box = await page.locator('#stage').boundingBox();
   const cx = box.x + box.width * Number(opt('cx', 0.5));
   const cy = box.y + box.height * Number(opt('cy', 0.55));
-  await page.mouse.move(cx, cy);
-  await page.mouse.down();
-  if (tool === 'Press') {
+  const line = opt('line', null);
+  if (has('--tap')) {
+    await page.mouse.click(cx, cy);
+    await page.waitForTimeout(Number(opt('after', 700)));
+    await page.screenshot({ path: `${outPrefix}-3-tap.png` });
+    await page.waitForTimeout(1500);
+    await page.screenshot({ path: `${outPrefix}-4-settled.png` });
+  } else if (!line) {
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+  }
+  if (line) {
+    const [x0, y0, x1, y1] = line.split(',').map(Number);
+    await page.mouse.move(box.x + box.width * x0, box.y + box.height * y0);
+    await page.mouse.down();
+    for (let i = 1; i <= 16; i++) {
+      await page.mouse.move(box.x + box.width * (x0 + ((x1 - x0) * i) / 16), box.y + box.height * (y0 + ((y1 - y0) * i) / 16));
+      await page.waitForTimeout(16);
+    }
+    await page.screenshot({ path: `${outPrefix}-2-line.png` });
+    await page.mouse.up();
+    await page.waitForTimeout(Number(opt('after', 900)));
+    await page.screenshot({ path: `${outPrefix}-3-cut.png` });
+    await page.waitForTimeout(1500);
+    await page.screenshot({ path: `${outPrefix}-4-settled.png` });
+  } else if (tool === 'Press') {
     for (let i = 1; i <= 20; i++) {
       await page.mouse.move(cx, cy + i * 12);
       await page.waitForTimeout(16);
@@ -57,6 +80,15 @@ if (tool) {
   await page.mouse.up();
   await page.waitForTimeout(150);
   await page.screenshot({ path: `${outPrefix}-3-after.png` });
+}
+
+const action = opt('action', null);
+if (action) {
+  await page.getByRole('button', { name: action, exact: true }).click();
+  await page.waitForTimeout(Number(opt('after', 700)));
+  await page.screenshot({ path: `${outPrefix}-3-action.png` });
+  await page.waitForTimeout(1500);
+  await page.screenshot({ path: `${outPrefix}-4-settled.png` });
 }
 
 if (has('--drag')) {

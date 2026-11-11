@@ -17,6 +17,8 @@ export interface Range {
   default: number;
 }
 
+import type { ParticleKind } from '../render/particles';
+
 export interface MaterialDef {
   id: MaterialId;
   label: string;
@@ -35,6 +37,8 @@ export interface MaterialDef {
   /** Slider end labels. */
   firmnessLabels: [string, string];
   dampingLabels: [string, string];
+  /** Debris when cut, struck or crumbled; colour defaults to the variant colour. */
+  debris: { kind: ParticleKind; color?: string };
   /** Rendering hints. */
   look: {
     kind: 'jelly' | 'solid' | 'subsurface';

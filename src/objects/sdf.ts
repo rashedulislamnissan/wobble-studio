@@ -7,16 +7,20 @@ import type { Sdf } from '../sim/lattice';
 
 export type { Sdf };
 
+/** Fast vector lengths (Math.hypot is several times slower in V8 hot loops). */
+export const len2 = (a: number, b: number) => Math.sqrt(a * a + b * b);
+export const len3 = (a: number, b: number, c: number) => Math.sqrt(a * a + b * b + c * c);
+
 export const sphere = (cx: number, cy: number, cz: number, r: number): Sdf => (x, y, z) =>
-  Math.hypot(x - cx, y - cy, z - cz) - r;
+  len3(x - cx, y - cy, z - cz) - r;
 
 /** Ellipsoid (Inigo Quilez's bound; good enough for meshing and lattice tests). */
 export const ellipsoid =
   (cx: number, cy: number, cz: number, rx: number, ry: number, rz: number): Sdf =>
   (x, y, z) => {
     const px = (x - cx) / rx, py = (y - cy) / ry, pz = (z - cz) / rz;
-    const k0 = Math.hypot(px, py, pz);
-    const k1 = Math.hypot(px / rx, py / ry, pz / rz);
+    const k0 = len3(px, py, pz);
+    const k1 = len3(px / rx, py / ry, pz / rz);
     return k1 > 1e-9 ? (k0 * (k0 - 1)) / k1 : -Math.min(rx, ry, rz);
   };
 
@@ -27,7 +31,7 @@ export const roundBox =
     const qy = Math.abs(y - cy) - hy + r;
     const qz = Math.abs(z - cz) - hz + r;
     const ox = Math.max(qx, 0), oy = Math.max(qy, 0), oz = Math.max(qz, 0);
-    return Math.hypot(ox, oy, oz) + Math.min(Math.max(qx, qy, qz), 0) - r;
+    return len3(ox, oy, oz) + Math.min(Math.max(qx, qy, qz), 0) - r;
   };
 
 /** Capsule between two points with radii ra → rb (a rounded cone). */
@@ -37,25 +41,25 @@ export const capsule =
     const pax = x - ax, pay = y - ay, paz = z - az;
     const bax = bx - ax, bay = by - ay, baz = bz - az;
     const h = Math.min(1, Math.max(0, (pax * bax + pay * bay + paz * baz) / (bax * bax + bay * bay + baz * baz)));
-    return Math.hypot(pax - bax * h, pay - bay * h, paz - baz * h) - (ra + (rb - ra) * h);
+    return len3(pax - bax * h, pay - bay * h, paz - baz * h) - (ra + (rb - ra) * h);
   };
 
 /** Vertical capped cylinder with rounded edges. */
 export const roundCylinder =
   (cx: number, cy: number, cz: number, r: number, halfH: number, round: number): Sdf =>
   (x, y, z) => {
-    const dx = Math.hypot(x - cx, z - cz) - r + round;
+    const dx = len2(x - cx, z - cz) - r + round;
     const dy = Math.abs(y - cy) - halfH + round;
-    return Math.min(Math.max(dx, dy), 0) + Math.hypot(Math.max(dx, 0), Math.max(dy, 0)) - round;
+    return Math.min(Math.max(dx, dy), 0) + len2(Math.max(dx, 0), Math.max(dy, 0)) - round;
   };
 
 /** Torus lying in the XZ plane. */
 export const torus = (cx: number, cy: number, cz: number, R: number, r: number): Sdf => (x, y, z) =>
-  Math.hypot(Math.hypot(x - cx, z - cz) - R, y - cy) - r;
+  len2(Math.hypot(x - cx, z - cz) - R, y - cy) - r;
 
 /** Solid of revolution around Y from a 2D profile distance (r = radial distance). */
 export const lathe = (profile: (r: number, y: number) => number): Sdf => (x, y, z) =>
-  profile(Math.hypot(x, z), y);
+  profile(len2(x, z), y);
 
 // ------------------------------------------------------------------ operators
 
@@ -109,7 +113,7 @@ export const mirrorZ = (f: Sdf): Sdf => (x, y, z) => f(x, y, Math.abs(z));
 export const box2 = (px: number, py: number, hx: number, hy: number, r = 0) => {
   const qx = Math.abs(px) - hx + r;
   const qy = Math.abs(py) - hy + r;
-  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - r;
+  return len2(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - r;
 };
 
 /** Cheap deterministic hash noise in [0, 1). */

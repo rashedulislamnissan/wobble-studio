@@ -2,10 +2,14 @@
  * The studio runtime: renderer + stage + fixed loop + pointer routing + one specimen.
  * UI layers talk to it through a small API (setters and a per-frame stats callback).
  */
-import type { BufferGeometry, Material } from 'three/webgpu';
+import type { Material } from 'three/webgpu';
+import type { ObjectMesher } from '../objects/build';
+import type { Shape, Variant } from '../objects/types';
 import { SIM } from '../config';
 import { audio } from '../audio/engine';
+import { Particles, type ParticleKind } from '../render/particles';
 import { createRenderer, type RendererKind } from '../render/renderer';
+import { StageOverlay } from '../ui/stageOverlay';
 import { Stage } from '../render/stage';
 import type { SoftBodyParams } from '../sim/softbody';
 import type { Tint } from '../tint/tint';
@@ -13,7 +17,7 @@ import { HandTool } from '../tools/hand';
 import type { Tool } from '../tools/tool';
 import { FixedLoop, FpsMeter } from './loop';
 import { PointerRouter } from './pointer';
-import { Specimen, type SpecimenShape } from './specimen';
+import { Specimen } from './specimen';
 
 export interface FrameStats {
   fps: number;
@@ -46,6 +50,13 @@ export class Runtime {
   onFrame: ((s: FrameStats) => void) | null = null;
   /** Called once per physics step after the solver (special actions animate here). */
   onStep: ((dt: number) => void) | null = null;
+  readonly particles: Particles;
+  readonly overlay = new StageOverlay();
+  /** Debris style for the current object (set by the studio). */
+  debrisStyle: { kind: ParticleKind; color: string } = { kind: 'shimmer', color: '#ffffff' };
+  objectId = '';
+  /** Called after a successful cut. */
+  onCut: (() => void) | null = null;
   private statsTimer = 0;
   private readonly footprint = { x: 0, z: 0, radius: 0.5, minY: 0 };
   quality: Quality;
@@ -56,6 +67,8 @@ export class Runtime {
     private readonly renderer: Awaited<ReturnType<typeof createRenderer>>['renderer'],
   ) {
     this.stage = new Stage(renderer);
+    this.particles = new Particles(this.stage.scene);
+    canvas.parentElement?.insertBefore(this.overlay.root, canvas.nextSibling);
     this.quality = Runtime.defaultQuality();
     this.loop = new FixedLoop({
       step: (dt) => {
@@ -73,6 +86,10 @@ export class Runtime {
         sound: (e, i) => audio.play(e, i),
         stiffness: () => this.specimen?.body.params.stiffness ?? 20,
         firstGesture: () => audio.unlock(),
+        debris: (at, n, dir) => this.particles.burst(this.debrisStyle.kind, at, n, this.debrisStyle.color, dir),
+        objectId: () => this.objectId,
+        overlay: this.overlay,
+        afterCut: () => this.onCut?.(),
       },
       new HandTool(),
     );
@@ -96,8 +113,9 @@ export class Runtime {
   }
 
   setSpecimen(
-    shape: SpecimenShape,
-    geometry: BufferGeometry,
+    shape: Shape,
+    mesher: ObjectMesher,
+    variant: Variant,
     params: SoftBodyParams,
     material: Material,
     dropHeight = 0.5,
@@ -106,19 +124,21 @@ export class Runtime {
     const old = this.specimen;
     this.specimen = new Specimen(this.stage.scene, {
       shape,
-      geometry,
+      mesher,
+      variant,
       params,
       material,
       resolution: this.quality.resolution,
       dropHeight,
     });
-    this.specimen.body.substeps = this.quality.substeps;
+    this.specimen.substepCount = this.quality.substeps;
     this.pointer.specimen = this.specimen;
     // Aim at the middle of the object so tall and flat things both sit well in frame.
     this.pointer.controls.target.y = Math.max(0.25, this.specimen.height * 0.45);
     if (old) {
+      const oldMat = old.meshes()[0]?.material as Material | undefined;
       old.dispose();
-      (old.view.mesh.material as Material).dispose();
+      if (oldMat && oldMat !== material) oldMat.dispose();
     }
   }
 
@@ -144,10 +164,11 @@ export class Runtime {
     this.fps.push(frameMs);
     this.pointer.update();
     this.stage.update(now);
+    if (!this.loop.paused) this.particles.update(Math.min(0.05, frameMs / 1000) * this.loop.timeScale);
     const s = this.specimen;
     if (s) {
       s.render(alpha);
-      const f = s.view.footprint(this.footprint);
+      const f = s.footprint(this.footprint);
       this.stage.updateContact(f.x, f.z, f.radius, f.minY);
       const impact = s.body.takeImpact();
       if (impact.speed > IMPACT_MIN_SPEED && impact.fraction > 0.01) {

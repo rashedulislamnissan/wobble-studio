@@ -1,16 +1,18 @@
 /**
- * Build an object's render geometry: the SDF surface (vertex-coloured) plus any thin
- * details, merged into one indexed mesh. Recolouring for a new variant rewrites only the
- * colour attribute, so switching variety never resets the simulation.
+ * Render geometry for an object or for any piece of it after cutting: the piece's SDF
+ * surface (vertex-coloured, with interior colours on cut faces) plus the thin details
+ * (stems, eyes, berries) that belong to that piece. Recolouring for a new variant
+ * rewrites only the colour attribute, so switching variety never resets the simulation.
  */
 import { BufferAttribute, type BufferGeometry } from 'three/webgpu';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import type { Sdf, Vec3Tuple } from '../sim/lattice';
 import { meshSdf } from './mesher';
 import type { Shape, Variant } from './types';
 
-export interface RenderBuild {
-  geometry: BufferGeometry;
-  recolor(variant: Variant): void;
+interface PieceMeta {
+  bodyVerts: number;
+  detailIds: number[];
 }
 
 function prepareDetail(g: BufferGeometry): BufferGeometry {
@@ -23,36 +25,85 @@ function prepareDetail(g: BufferGeometry): BufferGeometry {
   return d;
 }
 
-export function buildRenderGeometry(shape: Shape, variant: Variant, resolution: number): RenderBuild {
-  const { min, max } = shape.bounds;
-  const body = meshSdf(shape.sdf, min, max, { resolution, color: shape.color(variant) });
-  const details = (shape.details?.(variant) ?? []).map(prepareDetail);
-  const geometry = details.length ? mergeGeometries([body, ...details], false)! : body;
-  const bodyVerts = body.getAttribute('position').count;
+export class ObjectMesher {
+  /** Render cell size (world units). */
+  readonly h: number;
+  private readonly detailCache = new Map<string, BufferGeometry[]>();
+  /** Rest-space centroid of each detail, to assign details to pieces after a cut. */
+  readonly detailCentroids: Vec3Tuple[];
 
-  const recolor = (v: Variant) => {
+  constructor(
+    readonly shape: Shape,
+    resolution: number,
+    initialVariant: Variant,
+  ) {
+    this.h = shape.size / resolution;
+    this.detailCentroids = this.details(initialVariant).map((g) => {
+      g.computeBoundingBox();
+      const c = g.boundingBox!.getCenter(g.boundingBox!.min.clone());
+      return [c.x, c.y, c.z];
+    });
+  }
+
+  private details(v: Variant): BufferGeometry[] {
+    let d = this.detailCache.get(v.id);
+    if (!d) {
+      d = (this.shape.details?.(v) ?? []).map(prepareDetail);
+      this.detailCache.set(v.id, d);
+    }
+    return d;
+  }
+
+  /** Vertex colour with interior depth: 0 on the original skin, > 0 on cut faces. */
+  private colorFn(v: Variant) {
+    const fn = this.shape.color(v);
+    const sdf = this.shape.sdf;
+    return (x: number, y: number, z: number, nx: number, ny: number, nz: number) =>
+      fn(x, y, z, nx, ny, nz, Math.max(0, -sdf(x, y, z)));
+  }
+
+  /** Mesh a piece: `sdf` is the piece's rest-space shape, bounds its rest extent. */
+  build(sdf: Sdf, min: Vec3Tuple, max: Vec3Tuple, variant: Variant, detailIds: number[]): BufferGeometry {
+    const extent = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
+    const resolution = Math.max(8, Math.ceil(extent / this.h));
+    const body = meshSdf(sdf, min, max, { resolution, color: this.colorFn(variant) });
+    const all = this.details(variant);
+    const parts = detailIds.map((i) => all[i]).filter(Boolean);
+    const geometry = parts.length ? mergeGeometries([body, ...parts.map((p) => p.clone())], false)! : body;
+    geometry.userData.piece = { bodyVerts: body.getAttribute('position').count, detailIds } satisfies PieceMeta;
+    return geometry;
+  }
+
+  /** Initial, uncut object. */
+  buildWhole(variant: Variant): BufferGeometry {
+    const { min, max } = this.shape.bounds;
+    return this.build(this.shape.sdf, min, max, variant, this.detailCentroids.map((_, i) => i));
+  }
+
+  recolor(geometry: BufferGeometry, v: Variant) {
+    const meta = geometry.userData.piece as PieceMeta | undefined;
+    if (!meta) return;
     const color = geometry.getAttribute('color') as BufferAttribute;
     const pos = geometry.getAttribute('position').array as Float32Array;
     const nrm = geometry.getAttribute('normal').array as Float32Array;
-    const fn = shape.color(v);
+    const fn = this.colorFn(v);
     const arr = color.array as Float32Array;
-    for (let i = 0; i < bodyVerts; i++) {
+    for (let i = 0; i < meta.bodyVerts; i++) {
       const c = fn(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2], nrm[i * 3], nrm[i * 3 + 1], nrm[i * 3 + 2]);
       arr[i * 3] = c[0];
       arr[i * 3 + 1] = c[1];
       arr[i * 3 + 2] = c[2];
     }
-    // Details keep their topology across variants; copy their new colours in order.
-    let offset = bodyVerts * 3;
-    for (const d of shape.details?.(v) ?? []) {
-      const src = prepareDetail(d).getAttribute('color').array as Float32Array;
+    let offset = meta.bodyVerts * 3;
+    const all = this.details(v);
+    for (const id of meta.detailIds) {
+      const src = all[id]?.getAttribute('color')?.array as Float32Array | undefined;
+      if (!src) continue;
       arr.set(src, offset);
       offset += src.length;
     }
     color.needsUpdate = true;
-  };
-
-  return { geometry, recolor };
+  }
 }
 
 /** Give a primitive detail geometry a flat colour attribute. */
@@ -61,5 +112,16 @@ export function paint(g: BufferGeometry, rgb: [number, number, number]): BufferG
   const c = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) c.set(rgb, i * 3);
   g.setAttribute('color', new BufferAttribute(c, 3));
+  return g;
+}
+
+/** Keep only triangles whose vertices all pass `keep` (drops another component's surface). */
+export function filterTriangles(g: BufferGeometry, keep: (v: number) => boolean): BufferGeometry {
+  const idx = g.index!.array;
+  const out: number[] = [];
+  for (let f = 0; f < idx.length; f += 3) {
+    if (keep(idx[f]) && keep(idx[f + 1]) && keep(idx[f + 2])) out.push(idx[f], idx[f + 1], idx[f + 2]);
+  }
+  if (out.length !== idx.length) g.setIndex(out);
   return g;
 }

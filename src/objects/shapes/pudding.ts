@@ -2,6 +2,7 @@
 import { lin, mix, noise3, smoothstep, type RGB } from '../color';
 import type { Sdf } from '../sdf';
 import type { ShapeBuilder, Variant } from '../types';
+import { len2 } from '../sdf';
 
 const H = 0.56;
 const R_BOTTOM = 0.47;
@@ -11,11 +12,11 @@ const SLOPE = (R_TOP - R_BOTTOM) / H;
 const SLOPE_NORM = Math.sqrt(1 + SLOPE * SLOPE);
 
 const sdf: Sdf = (x, y, z) => {
-  const r = Math.hypot(x, z);
+  const r = len2(x, z);
   const rr = R_BOTTOM + SLOPE * Math.min(H, Math.max(0, y));
   const dr = (r - rr) / SLOPE_NORM + ROUND;
   const dy = Math.abs(y - H / 2) - H / 2 + ROUND;
-  return Math.min(Math.max(dr, dy), 0) + Math.hypot(Math.max(dr, 0), Math.max(dy, 0)) - ROUND;
+  return Math.min(Math.max(dr, dy), 0) + len2(Math.max(dr, 0), Math.max(dy, 0)) - ROUND;
 };
 
 const PALETTES: Record<string, { custard: string; custardDeep: string; syrup: string; syrupLight: string }> = {

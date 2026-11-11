@@ -5,18 +5,7 @@
 import { SphereGeometry } from 'three/webgpu';
 import { paint } from '../build';
 import { lin, mix, smoothstep } from '../color';
-import {
-  capsule,
-  ellipsoid,
-  intersect,
-  mirrorZ,
-  rotateX,
-  rotateY,
-  rotateZ,
-  smoothUnion,
-  translate,
-  type Sdf,
-} from '../sdf';
+import { capsule, ellipsoid, intersect, mirrorZ, rotateX, rotateY, rotateZ, smoothUnion, translate, type Sdf, len3 } from '../sdf';
 import type { ShapeBuilder } from '../types';
 
 const TURN = -0.42; // yaw toward the camera
@@ -85,7 +74,7 @@ export const dolphin: ShapeBuilder = () => ({
     head: (x, _y, z) => smoothstep(0.2, 0.6, toLocal(x, z)[0]),
     blowhole: (x, y, z) => {
       const [lx, lz] = toLocal(x, z);
-      return smoothstep(0.22, 0.0, Math.hypot(lx - 0.22, y - 0.3, lz));
+      return smoothstep(0.22, 0.0, len3(lx - 0.22, y - 0.3, lz));
     },
   },
 });

@@ -6,7 +6,11 @@
  * behaviour stays the same when the lattice resolution changes (auto-quality).
  */
 import { SIM } from '../config';
-import { seededRandom, tetVolume, type TetMesh } from './lattice';
+import { seededRandom, shuffleRecords, tetVolume, uniqueEdges, type TetMesh } from './lattice';
+import type { Topology } from './topology';
+
+/** Max inter-piece separation per substep (world units): pieces ease apart. */
+const PIECE_PUSH_PER_SUBSTEP = 0.0012;
 
 export type Collider =
   | { kind: 'sphere'; x: number; y: number; z: number; r: number; depth: number; contacts: number }
@@ -333,6 +337,7 @@ export class SoftBody {
       else if (pos[k + 2] > halfDepth) pos[k + 2] = halfDepth;
     }
     if (this.colliders.length) this.solveColliders();
+    if (this.pieceCount > 1) this.solvePieceCollisions();
   }
 
   /**
@@ -359,7 +364,77 @@ export class SoftBody {
   }
 
   /** Kinematic tool colliders (poke fingertip, press plate). Contact depth feeds audio. */
-  readonly colliders: Collider[] = [];
+  colliders: Collider[] = [];
+
+  /** Piece id per node; pieces collide with each other but not with themselves. */
+  nodePiece: Uint16Array = new Uint16Array(0);
+  pieceCount = 1;
+  /** Inter-piece contact distance (world units), set from the lattice cell size. */
+  pieceGap = 0.04;
+
+  /** Build a body for a (cut) topology, carrying over its node state. */
+  static fromTopology(top: Topology, params: SoftBodyParams): SoftBody {
+    const edges = uniqueEdges(top.tets, top.rest.length / 3);
+    shuffleRecords(edges, 2, seededRandom(0x5eed));
+    const body = new SoftBody(
+      { positions: new Float32Array(top.rest), tets: top.tets, edges } as unknown as TetMesh,
+      params,
+    );
+    body.rest.set(top.rest);
+    body.pos.set(top.pos);
+    body.prev.set(top.prev);
+    body.vel.set(top.vel);
+    body.nodePiece = top.nodePiece;
+    body.pieceCount = top.pieceCount;
+    return body;
+  }
+
+  // Spatial hash scratch for inter-piece collisions.
+  private hashHead = new Int32Array(0);
+  private hashNext = new Int32Array(0);
+
+  /** Keep different pieces from passing through each other (node-level, spatial hash). */
+  private solvePieceCollisions() {
+    const n = this.count;
+    const { pos, invMass, nodePiece } = this;
+    const r = this.pieceGap;
+    const inv = 1 / r;
+    const TABLE = 8192;
+    if (this.hashHead.length !== TABLE) this.hashHead = new Int32Array(TABLE);
+    if (this.hashNext.length < n) this.hashNext = new Int32Array(n);
+    const head = this.hashHead.fill(-1);
+    const next = this.hashNext;
+    const cellKey = (x: number, y: number, z: number) =>
+      ((Math.floor(x * inv) * 92837111) ^ (Math.floor(y * inv) * 689287499) ^ (Math.floor(z * inv) * 283923481)) & (TABLE - 1);
+    for (let i = 0; i < n; i++) {
+      const k = cellKey(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
+      next[i] = head[k];
+      head[k] = i;
+    }
+    const r2 = r * r;
+    for (let i = 0; i < n; i++) {
+      const xi = pos[i * 3], yi = pos[i * 3 + 1], zi = pos[i * 3 + 2];
+      const cx = Math.floor(xi * inv), cy = Math.floor(yi * inv), cz = Math.floor(zi * inv);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+        const k = (((cx + dx) * 92837111) ^ ((cy + dy) * 689287499) ^ ((cz + dz) * 283923481)) & (TABLE - 1);
+        for (let j = head[k]; j >= 0; j = next[j]) {
+          if (j <= i || nodePiece[j] === nodePiece[i]) continue;
+          const ex = pos[j * 3] - xi, ey = pos[j * 3 + 1] - yi, ez = pos[j * 3 + 2] - zi;
+          const d2 = ex * ex + ey * ey + ez * ez;
+          if (d2 >= r2 || d2 < 1e-12) continue;
+          const d = Math.sqrt(d2);
+          const wi = invMass[i], wj = invMass[j];
+          const w = wi + wj;
+          if (w === 0) continue;
+          // Cap the push per substep: freshly cut seams start almost touching, and an
+          // uncapped push would turn into a violent separation velocity.
+          const s = Math.min(r - d, PIECE_PUSH_PER_SUBSTEP) / d / w;
+          pos[i * 3] -= ex * s * wi; pos[i * 3 + 1] -= ey * s * wi; pos[i * 3 + 2] -= ez * s * wi;
+          pos[j * 3] += ex * s * wj; pos[j * 3 + 1] += ey * s * wj; pos[j * 3 + 2] += ez * s * wj;
+        }
+      }
+    }
+  }
 
   /**
    * Surface proxies: sample points on the visible surface, embedded in the tets. Tool
@@ -497,13 +572,14 @@ export class SoftBody {
    * Grab the region around `hit`: particles within `radius` are pulled toward the pointer
    * with a falloff, which reads as a soft pinch rather than a single stretched vertex.
    */
-  beginGrab(hit: ArrayLike<number>, radius: number, compliance: number): boolean {
+  beginGrab(hit: ArrayLike<number>, radius: number, compliance: number, piece = -1): boolean {
     const idx: number[] = [];
     const weights: number[] = [];
     const offsets: number[] = [];
     let nearest = -1;
     let nearestD = Infinity;
     for (let i = 0; i < this.count; i++) {
+      if (piece >= 0 && this.nodePiece[i] !== piece) continue;
       const j = i * 3;
       const dx = this.pos[j] - hit[0];
       const dy = this.pos[j + 1] - hit[1];
