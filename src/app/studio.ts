@@ -105,7 +105,7 @@ export async function startStudio(params: AppParams) {
   });
 
   // ---------------------------------------------------------------- UI
-  const topBar = new TopBar(() => null);
+  const topBar = new TopBar((o) => `${import.meta.env.BASE_URL}thumbs/${o.id}.webp`);
   const title = new TitleBlock();
   const readout = new Readout();
   const badge = new Badge();
@@ -196,6 +196,11 @@ export async function startStudio(params: AppParams) {
       activeVariant: state.variant.id,
       onVariant: (id) => {
         state.variant = state.def.variants.find((v) => v.id === id)!;
+        // Some varieties change the shape itself (Swiss holes): rebuild in that variety.
+        if (state.def.rebuildOnVariant) {
+          void selectObject(state.def, false, id);
+          return;
+        }
         rt.specimen?.setVariant(state.variant);
         applyDebrisStyle();
         applyTint(false);
@@ -251,24 +256,25 @@ export async function startStudio(params: AppParams) {
     });
   }
 
-  async function selectObject(def: ObjectDef, first = false) {
+  async function selectObject(def: ObjectDef, first = false, variantId?: string) {
     const token = ++loadToken;
-    const variant = def.variants[0];
+    const variant = def.variants.find((v) => v.id === variantId) ?? def.variants[0];
     // Tint and title move immediately; geometry follows when ready.
     state.def = def;
     state.variant = variant;
     const m = material();
-    state.firm = m.stiffness.default;
+    state.firm = def.firmness ?? m.stiffness.default;
     state.damp = m.damping.default;
     applyTint(first);
     title.set(def.no, def.title[0], def.title[1], def.description);
     topBar.setSelected(def.id);
     app.dataset.state = 'loading';
 
-    let shape = shapes.get(def.id);
+    const key = def.rebuildOnVariant ? `${def.id}:${variant.id}` : def.id;
+    let shape = shapes.get(key);
     if (!shape) {
-      shape = (await def.load())();
-      shapes.set(def.id, shape);
+      shape = (await def.load())(variant);
+      shapes.set(key, shape);
     }
     if (token !== loadToken) return; // a newer selection won
 
@@ -277,7 +283,7 @@ export async function startStudio(params: AppParams) {
       m.look.kind === 'jelly' ? createJellyMaterial(m.look.clarity).material : createSurfaceMaterial(m, shape.look);
     queue = [];
     rt.displayDensity = m.displayDensity;
-    rt.setSpecimen(shape, mesher, variant, bodyParams(m), mat, first ? 0.9 : 0.55);
+    rt.setSpecimen(shape, mesher, variant, bodyParams(m), mat, first ? 0.45 : 0.3);
     rt.specimen!.setShowMesh(state.showMesh);
     audio.material = def.material;
     rt.objectId = def.id;

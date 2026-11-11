@@ -60,6 +60,7 @@ export class PressTool implements Tool {
     this.target = this.top;
     this.lifting = false;
     this.lastSoundDepth = 0;
+    this.burst = false;
     if (!this.collider) {
       this.collider = { kind: 'plate', y: this.top + 0.3, depth: 0, contacts: 0 };
       ctx.specimen.body.colliders.push(this.collider);
@@ -94,11 +95,30 @@ export class PressTool implements Tool {
         this.lastSoundDepth = depth;
         ctx.sound('press', Math.min(1, depth));
       }
+      if (depth > 0.72 && !this.burst && ctx.objectId() === 'tomato') this.burstTomato(ctx);
     }
     this.plate.position.y = this.collider.y + PLATE_THICKNESS / 2;
   }
 
   up() {
+    this.lifting = true;
+  }
+
+  private burst = false;
+
+  /** Squash a tomato far enough and its skin gives way. */
+  private burstTomato(ctx: ToolContext) {
+    this.burst = true;
+    const com = ctx.specimen.body.centerOfMass();
+    const base = Math.random() * Math.PI;
+    for (let k = 0; k < 3; k++) {
+      const a = base + (k * Math.PI) / 3;
+      const nx = Math.cos(a), nz = Math.sin(a);
+      const d = nx * com[0] + nz * com[2];
+      ctx.cut((x, _y, z) => nx * x + nz * z - d, { normal: [nx, 0, nz], separation: 0.45 });
+    }
+    ctx.sound('break', 1);
+    ctx.debris([com[0], com[1], com[2]], 70, [0, 0.6, 0]);
     this.lifting = true;
   }
 

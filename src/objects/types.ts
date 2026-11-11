@@ -48,6 +48,10 @@ export interface ObjectDef {
   actions: ObjectAction[];
   /** Lazy shape module, so only the selected object's code is loaded. */
   load: () => Promise<ShapeBuilder>;
+  /** Default Firmness slider position (0..1) if this object differs from its material. */
+  firmness?: number;
+  /** The variety changes the shape itself (Swiss vs cheddar): rebuild on change. */
+  rebuildOnVariant?: boolean;
 }
 
 /** Everything needed to simulate and draw one object. */
@@ -76,6 +80,16 @@ export interface Shape {
   };
   /** Lattice inflation override (default 0.3). */
   inflate?: number;
+  /**
+   * Bottom-heavy mass ("weeble"): extra mass toward the base, so tall soft objects rock
+   * back upright instead of toppling. 0 = uniform.
+   */
+  ballast?: number;
+  /**
+   * Brittle objects break only along these rest-space planes (n·p = d), e.g. a chocolate
+   * bar's grooves. Knife and hammer snap to the nearest one.
+   */
+  snapPlanes?: [number, number, number, number][];
 }
 
-export type ShapeBuilder = () => Shape;
+export type ShapeBuilder = (variant?: Variant) => Shape;

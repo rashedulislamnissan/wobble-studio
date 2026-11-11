@@ -138,7 +138,14 @@ export class HammerTool implements Tool {
       if (d > radius) continue;
       vel[i * 3 + 1] -= 3.5 * (1 - d / radius);
     }
-    const breaks = id === 'tomato' ? 4 : id === 'chocolate' ? 1 : 2;
+    const snap = s.snapField([hp.x, hp.y, hp.z]);
+    if (snap) {
+      const ok = ctx.cut(snap.field, { normal: snap.normal, separation: 0.5 });
+      ctx.sound(ok ? 'break' : 'impact', 1);
+      ctx.debris([hp.x, hp.y, hp.z], 18, [0, 1, 0]);
+      return false;
+    }
+    const breaks = id === 'tomato' ? 4 : 2;
     let any = false;
     const base = Math.random() * Math.PI;
     for (let k = 0; k < breaks; k++) {

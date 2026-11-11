@@ -17,7 +17,7 @@ export interface ToolContext {
   /** Fire a sound event at intensity 0..1. */
   sound(event: SoundEvent, intensity: number): void;
   /** Material-appropriate debris (crumbs, juice, shimmer...) at a world point. */
-  debris(at: [number, number, number], count: number, dir?: [number, number, number]): void;
+  debris(at: [number, number, number], count: number, dir?: [number, number, number], color?: string): void;
   /** Cut the specimen along a world-space field; false if nothing was cut. */
   cut(field: Field, opts?: CutOptions): boolean;
   /** 2D guide layer over the stage. */

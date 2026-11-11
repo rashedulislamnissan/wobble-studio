@@ -14,6 +14,7 @@ export class KnifeTool implements Tool {
   readonly anywhere = true;
   readonly cursor = { idle: 'crosshair', hover: 'crosshair', active: 'crosshair' };
   private start: PointerSample | null = null;
+  private snapD: number | null = null;
   private end: PointerSample | null = null;
   private blade: Mesh | null = null;
   private anim: { t: number; plane: Vector3; d: number; u: Vector3; top: number; bottom: number; centre: Vector3; field: (x: number, y: number, z: number) => number; done: boolean } | null = null;
@@ -60,7 +61,7 @@ export class KnifeTool implements Tool {
       ctx.overlay.clearLine();
       return;
     }
-    const d = n.dot(ra.origin);
+    let d = n.dot(ra.origin);
     const size = ctx.specimen.shape.size;
     const amp = this.ripple * size;
     const wavelength = size * 0.2;
@@ -68,12 +69,26 @@ export class KnifeTool implements Tool {
     const u = new Vector3().crossVectors(n, new Vector3(0, 1, 0));
     if (u.lengthSq() < 1e-3) u.crossVectors(n, new Vector3(1, 0, 0));
     u.normalize();
+    if (this.snapD !== null) d = this.snapD;
     const field =
-      amp > 0
+      amp > 0 && this.snapD === null
         ? (x: number, y: number, z: number) =>
             n.x * x + n.y * y + n.z * z - d + amp * Math.sin(((u.x * x + u.y * y + u.z * z) / wavelength) * Math.PI * 2)
         : (x: number, y: number, z: number) => n.x * x + n.y * y + n.z * z - d;
 
+    // Brittle objects (chocolate) break along their nearest groove instead.
+    const mid = ctx.ray((a.ndcX + b.ndcX) / 2, (a.ndcY + b.ndcY) / 2);
+    const com0 = ctx.specimen.body.centerOfMass();
+    const along = mid.direction.clone().multiplyScalar(mid.origin.distanceTo(new Vector3(com0[0], com0[1], com0[2])));
+    const near = mid.origin.clone().add(along);
+    const snap = ctx.specimen.snapField([near.x, near.y, near.z]);
+    if (snap) {
+      n.set(snap.normal[0], snap.normal[1], snap.normal[2]);
+      const ref = near.clone();
+      // Re-derive d for the snapped plane through its own field: field(p) = n·p - d.
+      const fd = n.dot(ref) - snap.field(ref.x, ref.y, ref.z);
+      this.snapD = fd;
+    } else this.snapD = null;
     // Blade sits in the plane, centred over the object, and presses down.
     const com = ctx.specimen.body.centerOfMass();
     const c = new Vector3(com[0], com[1], com[2]);
@@ -112,7 +127,7 @@ export class KnifeTool implements Tool {
         ctx.overlay.clearLine();
         const cut = ctx.cut(a.field, { normal: [a.plane.x, a.plane.y, a.plane.z], separation: 0.32 });
         if (cut) {
-          ctx.sound('slice', 0.7);
+          ctx.sound(ctx.specimen.shape.snapPlanes ? 'break' : 'slice', 0.7);
           ctx.debris([a.centre.x, Math.max(0.1, a.top - 0.45), a.centre.z], 18, [a.plane.x * 0.3, 1, a.plane.z * 0.3]);
         }
       }

@@ -126,6 +126,23 @@ export class SoftBody {
     }
   }
 
+  private restLen0: Float32Array | null = null;
+  private restVol0: Float32Array | null = null;
+
+  /**
+   * Scale the rest shape (1 = normal). Used for Puffy's "Puff up": the body swells as its
+   * springs and volumes relax toward the new rest size, then deflates when set back.
+   */
+  setInflation(f: number) {
+    if (!this.restLen0) {
+      this.restLen0 = new Float32Array(this.restLen);
+      this.restVol0 = new Float32Array(this.restVol);
+    }
+    const f3 = f * f * f;
+    for (let e = 0; e < this.restLen.length; e++) this.restLen[e] = this.restLen0[e] * f;
+    for (let t = 0; t < this.restVol.length; t++) this.restVol[t] = this.restVol0![t] * f3;
+  }
+
   /** Translate the whole body (used to place it on the stage). */
   translate(dx: number, dy: number, dz: number) {
     for (let i = 0; i < this.count; i++) {

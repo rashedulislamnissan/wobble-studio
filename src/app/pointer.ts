@@ -15,7 +15,7 @@ export interface PointerHooks {
   stiffness(): number;
   /** First interaction of the session (unlock audio). */
   firstGesture(): void;
-  debris(at: [number, number, number], count: number, dir?: [number, number, number]): void;
+  debris(at: [number, number, number], count: number, dir?: [number, number, number], color?: string): void;
   objectId(): string;
   overlay: StageOverlay;
   /** A cut changed the pieces (stats, sounds). */
@@ -77,7 +77,7 @@ export class PointerRouter {
         specimen: undefined as unknown as Specimen,
         stiffness: () => this.hooks.stiffness(),
         sound: (e, i) => this.hooks.sound(e, i),
-        debris: (at, n, dir) => this.hooks.debris(at, n, dir),
+        debris: (at, n, dir, color) => this.hooks.debris(at, n, dir, color),
         overlay: this.hooks.overlay,
         objectId: () => this.hooks.objectId(),
         cut: (field, opts) => {

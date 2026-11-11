@@ -168,6 +168,7 @@ export class Specimen {
     body.substeps = old?.substeps ?? this.substeps;
     body.floorY = this.floorY;
     body.pieceGap = this.tetMesh.lattice.cellSize * 0.42;
+    this.applyBallast(body);
     if (old) {
       body.colliders = old.colliders;
       body.holdHorizontal = old.holdHorizontal;
@@ -185,6 +186,19 @@ export class Specimen {
     if (this.wire) {
       this.setShowMesh(false);
       this.setShowMesh(true);
+    }
+  }
+
+  /** Weight the base: mass grows toward the bottom of the (rest) shape. */
+  private applyBallast(body: SoftBody) {
+    const k = this.shape.ballast ?? 0;
+    if (k <= 0) return;
+    const { min, max } = this.shape.bounds;
+    const span = max[1] - min[1] || 1;
+    for (let i = 0; i < body.count; i++) {
+      const t = Math.min(1, Math.max(0, (body.rest[i * 3 + 1] - min[1]) / span));
+      body.mass[i] *= 1 + k * (1 - t) * (1 - t);
+      body.invMass[i] = body.mass[i] > 0 ? 1 / body.mass[i] : 0;
     }
   }
 
@@ -490,6 +504,49 @@ export class Specimen {
       }
     }
     this.body.setSurfaceProxies(new Uint32Array(tets), new Float32Array(bary));
+  }
+
+  /**
+   * For brittle objects: the snap plane nearest to a world point, as a world-space field
+   * plus normal, or null if the object has no snap planes.
+   */
+  snapField(point: [number, number, number]): { field: Field; normal: [number, number, number] } | null {
+    const planes = this.shape.snapPlanes;
+    if (!planes?.length) return null;
+    // Piece nearest the point.
+    const b = this.body;
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < b.count; i++) {
+      const d = (b.pos[i * 3] - point[0]) ** 2 + (b.pos[i * 3 + 1] - point[1]) ** 2 + (b.pos[i * 3 + 2] - point[2]) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = b.nodePiece[i];
+      }
+    }
+    const nodes: number[] = [];
+    for (let i = 0; i < b.count; i++) if (b.nodePiece[i] === best) nodes.push(i);
+    const { C, c, R } = rigidFit(b.rest, b.pos, nodes, b.mass);
+    let pick: { field: Field; normal: [number, number, number]; dist: number } | null = null;
+    for (const [nx, ny, nz, d] of planes) {
+      // World plane: n_w = R n, passing through R (p0 - C) + c with p0 = n d.
+      const wn: [number, number, number] = [
+        R[0] * nx + R[1] * ny + R[2] * nz,
+        R[3] * nx + R[4] * ny + R[5] * nz,
+        R[6] * nx + R[7] * ny + R[8] * nz,
+      ];
+      const p0 = [nx * d - C[0], ny * d - C[1], nz * d - C[2]];
+      const wp = [
+        R[0] * p0[0] + R[1] * p0[1] + R[2] * p0[2] + c[0],
+        R[3] * p0[0] + R[4] * p0[1] + R[5] * p0[2] + c[1],
+        R[6] * p0[0] + R[7] * p0[1] + R[8] * p0[2] + c[2],
+      ];
+      const wd = wn[0] * wp[0] + wn[1] * wp[1] + wn[2] * wp[2];
+      const dist = Math.abs(wn[0] * point[0] + wn[1] * point[1] + wn[2] * point[2] - wd);
+      if (!pick || dist < pick.dist) {
+        pick = { field: (x, y, z) => wn[0] * x + wn[1] * y + wn[2] * z - wd, normal: wn, dist };
+      }
+    }
+    return pick && { field: pick.field, normal: pick.normal };
   }
 
   /** Which piece owns a render mesh (for tools that act on one piece). */

@@ -17,8 +17,6 @@ function tools(group: Group, extra: ToolId[] = []): ToolId[] {
   return [...new Set([...byGroup[group], ...extra])];
 }
 
-const placeholder = () => import('./shapes/placeholder').then((m) => m.placeholder);
-
 export const OBJECTS: ObjectDef[] = [
   // ------------------------------------------------------------------ Jelly (1–9)
   {
@@ -42,6 +40,7 @@ export const OBJECTS: ObjectDef[] = [
   },
   {
     id: 'gummy-bear',
+    firmness: 0.92,
     no: 2,
     group: 'jelly',
     title: ['Gummy', 'Bear.'],
@@ -55,7 +54,7 @@ export const OBJECTS: ObjectDef[] = [
     ],
     tools: tools('jelly'),
     actions: [{ id: 'bounce', label: 'Bounce' }],
-    load: placeholder,
+    load: () => import('./shapes/gummyBear').then((m) => m.gummyBear),
   },
   {
     id: 'octopus',
@@ -71,10 +70,11 @@ export const OBJECTS: ObjectDef[] = [
     ],
     tools: tools('jelly'),
     actions: [{ id: 'wiggle', label: 'Wiggle arms' }],
-    load: placeholder,
+    load: () => import('./shapes/octopus').then((m) => m.octopus),
   },
   {
     id: 'duck',
+    firmness: 0.74,
     no: 4,
     group: 'jelly',
     title: ['Jelly', 'Duck.'],
@@ -86,10 +86,11 @@ export const OBJECTS: ObjectDef[] = [
     ],
     tools: tools('jelly'),
     actions: [{ id: 'squeak', label: 'Squeak' }],
-    load: placeholder,
+    load: () => import('./shapes/duck').then((m) => m.duck),
   },
   {
     id: 'star',
+    firmness: 0.86,
     no: 5,
     group: 'jelly',
     title: ['Star', 'Jelly.'],
@@ -102,10 +103,11 @@ export const OBJECTS: ObjectDef[] = [
     ],
     tools: tools('jelly'),
     actions: [{ id: 'spin', label: 'Spin' }],
-    load: placeholder,
+    load: () => import('./shapes/starHeart').then((m) => m.star),
   },
   {
     id: 'heart',
+    firmness: 0.86,
     no: 6,
     group: 'jelly',
     title: ['Heart', 'Jelly.'],
@@ -118,7 +120,7 @@ export const OBJECTS: ObjectDef[] = [
     ],
     tools: tools('jelly'),
     actions: [{ id: 'beat', label: 'Heartbeat' }],
-    load: placeholder,
+    load: () => import('./shapes/starHeart').then((m) => m.heart),
   },
   {
     id: 'axolotl',
@@ -134,10 +136,11 @@ export const OBJECTS: ObjectDef[] = [
     ],
     tools: tools('jelly'),
     actions: [{ id: 'gills', label: 'Wiggle gills' }],
-    load: placeholder,
+    load: () => import('./shapes/axolotl').then((m) => m.axolotl),
   },
   {
     id: 'penguin',
+    firmness: 0.86,
     no: 8,
     group: 'jelly',
     title: ['Penguin', 'Jelly.'],
@@ -150,10 +153,11 @@ export const OBJECTS: ObjectDef[] = [
     ],
     tools: tools('jelly'),
     actions: [{ id: 'waddle', label: 'Waddle' }],
-    load: placeholder,
+    load: () => import('./shapes/penguin').then((m) => m.penguin),
   },
   {
     id: 'puffy',
+    firmness: 0.68,
     no: 9,
     group: 'jelly',
     title: ['Puffy.', ''],
@@ -166,7 +170,7 @@ export const OBJECTS: ObjectDef[] = [
     ],
     tools: tools('jelly'),
     actions: [{ id: 'puff', label: 'Puff up' }],
-    load: placeholder,
+    load: () => import('./shapes/puffy').then((m) => m.puffy),
   },
 
   // ------------------------------------------------------------------ Fruit (10–13)
@@ -215,7 +219,7 @@ export const OBJECTS: ObjectDef[] = [
     ],
     tools: tools('fruit', ['cutter', 'spoon', 'hammer']),
     actions: [{ id: 'seeds', label: 'Pop the seeds' }],
-    load: placeholder,
+    load: () => import('./shapes/watermelon').then((m) => m.watermelon),
   },
   {
     id: 'tomato',
@@ -230,7 +234,7 @@ export const OBJECTS: ObjectDef[] = [
     ],
     tools: tools('fruit', ['hammer']),
     actions: [],
-    load: placeholder,
+    load: () => import('./shapes/tomato').then((m) => m.tomato),
   },
 
   // ------------------------------------------------------------------ Soft (14–18)
@@ -262,8 +266,8 @@ export const OBJECTS: ObjectDef[] = [
       { id: 'wheat', label: 'Wheat', color: '#A86E3C', lightest: '#E8D2B0' },
     ],
     tools: tools('soft', ['cutter']),
-    actions: [],
-    load: placeholder,
+    actions: [{ id: 'squish', label: 'Squish' }],
+    load: () => import('./shapes/bread').then((m) => m.bread),
   },
   {
     id: 'donut',
@@ -279,7 +283,7 @@ export const OBJECTS: ObjectDef[] = [
     ],
     tools: tools('soft'),
     actions: [{ id: 'sprinkles', label: 'Sprinkle burst' }],
-    load: placeholder,
+    load: () => import('./shapes/donut').then((m) => m.donut),
   },
   {
     id: 'pudding',
@@ -312,7 +316,7 @@ export const OBJECTS: ObjectDef[] = [
     ],
     tools: tools('soft', ['spoon']),
     actions: [{ id: 'stretch', label: 'Stretch' }],
-    load: placeholder,
+    load: () => import('./shapes/mochi').then((m) => m.mochi),
   },
 
   // ------------------------------------------------------------------ Firm (19–20)
@@ -329,7 +333,8 @@ export const OBJECTS: ObjectDef[] = [
     ],
     tools: tools('firm', ['fork']),
     actions: [{ id: 'slice', label: 'Slice' }],
-    load: placeholder,
+    rebuildOnVariant: true,
+    load: () => import('./shapes/cheeseChocolate').then((m) => m.cheese),
   },
   {
     id: 'chocolate',
@@ -345,7 +350,7 @@ export const OBJECTS: ObjectDef[] = [
     ],
     tools: tools('firm', ['hammer']),
     actions: [{ id: 'snap', label: 'Snap' }],
-    load: placeholder,
+    load: () => import('./shapes/cheeseChocolate').then((m) => m.chocolate),
   },
 ];
 

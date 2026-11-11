@@ -86,7 +86,8 @@ export class Runtime {
         sound: (e, i) => audio.play(e, i),
         stiffness: () => this.specimen?.body.params.stiffness ?? 20,
         firstGesture: () => audio.unlock(),
-        debris: (at, n, dir) => this.particles.burst(this.debrisStyle.kind, at, n, this.debrisStyle.color, dir),
+        debris: (at, n, dir, color) =>
+          this.particles.burst(this.debrisStyle.kind, at, n, color ?? this.debrisStyle.color, dir),
         objectId: () => this.objectId,
         overlay: this.overlay,
         afterCut: () => this.onCut?.(),

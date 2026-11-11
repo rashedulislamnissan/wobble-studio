@@ -15,7 +15,7 @@ export interface ActionContext {
   schedule(delay: number, fn: () => void): void;
   sound(event: SoundEvent, intensity: number, recipe?: R.Recipe): void;
   cut(field: Field, opts?: CutOptions): boolean;
-  debris(at: [number, number, number], count: number, dir?: [number, number, number]): void;
+  debris(at: [number, number, number], count: number, dir?: [number, number, number], color?: string): void;
   /** Camera position (bites are taken from the side facing the viewer). */
   eye: [number, number, number];
 }
@@ -69,7 +69,51 @@ function worldBounds(s: Specimen) {
   return { min, max };
 }
 
+const SPRINKLES = ['#F25C78', '#4FB3E8', '#F7D04A', '#7DD181', '#FFFFFF', '#B98AE0'];
+
 export const ACTIONS: Record<string, Action> = {
+  puff: ({ specimen: s, schedule, sound }) => {
+    // Swell over a third of a second, hold, then slowly deflate.
+    const peak = 1.2;
+    const steps = 10;
+    for (let k = 1; k <= steps; k++) schedule((k / steps) * 0.35, () => s.body.setInflation(1 + (peak - 1) * (k / steps)));
+    const down = 40;
+    for (let k = 1; k <= down; k++) schedule(0.9 + (k / down) * 2.2, () => s.body.setInflation(peak - (peak - 1) * (k / down)));
+    sound('action', 0.6, R.puu);
+  },
+  squish: ({ specimen: s, sound }) => {
+    // Flatten the top hard; the sponge recovers slowly by itself.
+    s.impulse([0, -5.5, 0], s.region('top'));
+    sound('action', 0.7, R.softThud);
+  },
+  sprinkles: ({ specimen: s, debris, sound }) => {
+    const { min, max } = worldBounds(s);
+    for (const c of SPRINKLES) {
+      const x = min[0] + Math.random() * (max[0] - min[0]);
+      const z = min[2] + Math.random() * (max[2] - min[2]);
+      debris([x, max[1], z], 7, [0, 1.4, 0], c);
+    }
+    s.impulse([0, 2.2, 0]);
+    sound('action', 0.5, R.crumble);
+  },
+  seeds: ({ specimen: s, debris, schedule, sound }) => {
+    const com = s.body.centerOfMass();
+    for (let k = 0; k < 5; k++) {
+      schedule(k * 0.09, () => {
+        debris([com[0] + (Math.random() - 0.5) * 0.3, com[1] + 0.1, com[2] + (Math.random() - 0.5) * 0.2], 4, [Math.random() - 0.5, 1.6, 0.6], '#1C1411');
+        sound('action', 0.4, R.plop);
+      });
+    }
+    s.pulse(-1);
+  },
+  snap: ({ specimen: s, cut, sound, debris }) => {
+    const com = s.body.centerOfMass();
+    const snap = s.snapField([com[0], com[1], com[2]]);
+    if (snap && cut(snap.field, { normal: snap.normal, separation: 0.4 })) {
+      sound('break', 0.9);
+      debris([com[0], com[1] + 0.05, com[2]], 14, [0, 1, 0]);
+    }
+  },
   bite: ({ specimen: s, cut, sound, debris, eye }) => {
     // Take a bite from the upper edge facing the viewer.
     const com = s.body.centerOfMass();
