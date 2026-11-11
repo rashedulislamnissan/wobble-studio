@@ -153,7 +153,7 @@ export class Stage {
     this.uContact.value = Math.max(0, 1 - lowestY / (radius * 1.6));
   }
 
-  setTint(tint: Tint, instant = false) {
+  setTint(tint: Tint, instant = matchMedia('(prefers-reduced-motion: reduce)').matches) {
     const to: StageColors = {
       background: new Color(tint.background),
       spotlight: new Color(tint.spotlight),

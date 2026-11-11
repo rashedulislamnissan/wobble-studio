@@ -86,5 +86,6 @@ export class Badge {
   update(s: FrameStats) {
     this.text.textContent = `${s.renderer === 'webgpu' ? 'WebGPU' : 'WebGL'} · live`;
     this.fps.textContent = `${Math.round(s.fps)} fps`;
+    this.root.title = `${s.renderer === 'webgpu' ? 'WebGPU' : 'WebGL'} renderer, ${Math.round(s.fps)} frames per second`;
   }
 }

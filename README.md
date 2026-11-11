@@ -39,6 +39,15 @@ node scripts/shoot.mjs "http://localhost:5173/?dev=blob" screenshots/blob --drag
 node scripts/shoot.mjs "http://localhost:5173/" screenshots/phone --phone
 ```
 
+Other dev tools (dev server running):
+
+```bash
+node scripts/contact-sheet.mjs screenshots/sheet.png   # every object in one image
+node scripts/thumbs.mjs                                  # re-render selector thumbnails
+node scripts/bench-cut.mjs cake                          # time cuts in the live page
+node scripts/cpu-profile-cut.mjs cake                    # CPU profile of a cut
+```
+
 Solver probe (headless settle + cost):
 
 ```bash
@@ -52,7 +61,19 @@ builds and publishes automatically. One-time setup: repository *Settings → Pag
 GitHub Actions*.
 
 **Cloudflare Pages** (alternative, also free) — connect the repository, build command
-`npm run build`, output directory `dist`.
+`npm run build`, output directory `dist`, environment variable
+`VITE_SITE_URL=https://<your-site>/` (used for social-card links).
+
+## What is in it
+
+- 20 objects in four families (Jelly, Fruit, Soft, Firm), all generated in code from signed
+  distance functions: no downloaded models, nothing to license.
+- Nine tools: Hand, Poke, Press, Knife, Wavy knife, Cutter (star, heart, flower, round),
+  Fork, Spoon, Hammer. Cuts are real: pieces get exact cut faces with interior colours.
+- Synthesised sound per material (Web Audio, no samples). Starts silent until you interact.
+- Auto-quality: render scale, solver substeps, shadows and particles step down if the frame
+  rate stays low.
+- Save image: captures the stage with a caption (shares on phones, downloads on desktop).
 
 ## Project layout
 

@@ -17,6 +17,8 @@ import { HandTool } from '../tools/hand';
 import type { Tool } from '../tools/tool';
 import { FixedLoop, FpsMeter } from './loop';
 import { PointerRouter } from './pointer';
+import { QualityGovernor } from './quality';
+import { RENDER } from '../config';
 import { Specimen } from './specimen';
 
 export interface FrameStats {
@@ -58,6 +60,8 @@ export class Runtime {
   /** Called after a successful cut. */
   onCut: (() => void) | null = null;
   private statsTimer = 0;
+  private readonly governor: QualityGovernor;
+  private pendingCapture: ((b: Blob | null) => void) | null = null;
   private readonly footprint = { x: 0, z: 0, radius: 0.5, minY: 0 };
   quality: Quality;
 
@@ -94,8 +98,46 @@ export class Runtime {
       },
       new HandTool(),
     );
+    const dpr = window.devicePixelRatio || 1;
+    this.governor = new QualityGovernor(
+      {
+        setPixelRatio: (r) => {
+          renderer.setPixelRatio(Math.min(r, RENDER.maxPixelRatio));
+          this.resize();
+        },
+        setSubsteps: (n) => {
+          this.quality.substeps = n;
+          if (this.specimen) this.specimen.substepCount = n;
+        },
+        setShadowMapSize: (n) => {
+          const sh = this.stage.keyLight.shadow;
+          sh.mapSize.set(n, n);
+          sh.map?.dispose();
+          sh.map = null;
+        },
+        setParticleAmount: (f) => {
+          this.particles.amount = Math.min(this.particles.amount, f);
+        },
+        setFutureResolution: (lattice, mesh) => {
+          this.quality.resolution = Math.min(this.quality.resolution, lattice);
+          this.quality.meshResolution = Math.min(this.quality.meshResolution, mesh);
+        },
+      },
+      dpr,
+    );
     this.resize();
     window.addEventListener('resize', () => this.resize());
+  }
+
+  /** PNG of the next rendered frame (read right after rendering, before compositing). */
+  grabFrame(): Promise<Blob | null> {
+    return new Promise((resolve) => {
+      this.pendingCapture = resolve;
+    });
+  }
+
+  get qualityLevel() {
+    return this.governor.level;
   }
 
   static async create(canvas: HTMLCanvasElement, forceWebGL: boolean) {
@@ -148,7 +190,7 @@ export class Runtime {
   }
 
   setTint(t: Tint, instant = false) {
-    this.stage.setTint(t, instant);
+    this.stage.setTint(t, instant || matchMedia('(prefers-reduced-motion: reduce)').matches);
   }
 
   setTool(tool: Tool) {
@@ -178,6 +220,12 @@ export class Runtime {
       }
     }
     this.renderer.render(this.stage.scene, this.stage.camera);
+    if (this.pendingCapture) {
+      const done = this.pendingCapture;
+      this.pendingCapture = null;
+      this.canvas.toBlob((b) => done(b), 'image/png');
+    }
+    this.governor.update(this.fps.frameMs, frameMs);
 
     // Stats are cheap but not free; 8 updates a second reads as live.
     this.statsTimer += frameMs;

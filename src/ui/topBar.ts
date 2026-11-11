@@ -12,12 +12,16 @@ const SPEAKER_ON =
 const SPEAKER_OFF =
   '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6h2.2L8 3.2v9.6L4.7 10H2.5z" fill="none" stroke="currentColor" stroke-linejoin="round"/><path d="M10.5 6.2l3.4 3.6M13.9 6.2l-3.4 3.6" fill="none" stroke="currentColor" stroke-linecap="round"/></svg>';
 
+const CAMERA =
+  '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 5.5h2.2l1.1-1.6h4.4l1.1 1.6h2.2v7h-11z" fill="none" stroke="currentColor" stroke-linejoin="round"/><circle cx="8" cy="9" r="2.3" fill="none" stroke="currentColor"/></svg>';
+
 export class TopBar {
   readonly root: HTMLElement;
   private readonly items = new Map<string, HTMLButtonElement>();
   private readonly soundBtn: HTMLButtonElement;
   onSelect: ((id: string) => void) | null = null;
   onSound: ((on: boolean) => void) | null = null;
+  onCapture: (() => void) | null = null;
 
   constructor(thumb: (o: ObjectDef) => string | null) {
     const picker = h('div.picker', { role: 'listbox', 'aria-label': 'Objects', 'aria-orientation': 'horizontal' });
@@ -63,7 +67,15 @@ export class TopBar {
       },
     });
 
-    this.root = h('nav.topbar', { 'aria-label': 'Wobble Studio' }, h('p.wordmark', {}, 'Wobble Studio.'), picker, this.soundBtn);
+    const capture = h('button.icon-btn.capture', {
+      type: 'button',
+      title: 'Save an image of the stage',
+      'aria-label': 'Save image',
+      onclick: () => this.onCapture?.(),
+    });
+    capture.innerHTML = `${CAMERA}<span class="capture__label">Save image</span>`;
+
+    this.root = h('nav.topbar', { 'aria-label': 'Wobble Studio' }, h('p.wordmark', {}, 'Wobble Studio.'), picker, capture, this.soundBtn);
   }
 
   setSelected(id: string) {

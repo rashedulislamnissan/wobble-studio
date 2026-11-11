@@ -26,6 +26,7 @@ import { Badge, Readout, TitleBlock } from '../ui/readout';
 import { applyTintVars } from '../ui/tintVars';
 import { TopBar } from '../ui/topBar';
 import { ACTIONS, isActionAvailable, type ActionContext } from './actions';
+import { captureStage } from './capture';
 import type { AppParams } from './params';
 import { Runtime } from './runtime';
 
@@ -118,6 +119,11 @@ export async function startStudio(params: AppParams) {
   topBar.onSound = (on) => {
     audio.unlock();
     audio.setEnabled(on);
+  };
+  topBar.onCapture = async () => {
+    const title = state.def.title.join(' ').trim();
+    const result = await captureStage(canvas, () => rt.grabFrame(), title, '#1F1B18');
+    live.textContent = result === 'failed' ? 'Could not save the image.' : result === 'shared' ? 'Image shared.' : 'Image saved.';
   };
   topBar.onSelect = (id) => {
     const def = findObject(id);

@@ -20,12 +20,31 @@ synthesised sounds) are original and not listed.
 
 ## Models
 
-_None yet. All objects so far are generated in code._
+None. All 20 objects are generated in code from signed distance functions (`src/objects/shapes`).
+Puffy is an original character designed for this project.
 
 ## Textures
 
-_None yet._
+None. Surface detail (crumb, speckle, citrus membranes) is procedural.
 
 ## Sounds
 
-_None yet. Sounds so far are synthesised with the Web Audio API._
+None. All sounds are synthesised at runtime with the Web Audio API (`src/audio/recipes.ts`).
+
+## Images
+
+`public/og.png`, `public/apple-touch-icon.png` and `public/thumbs/*` are renders of this
+project, made with `scripts/thumbs.mjs` and the dev tools.
+
+## Development tools (not shipped)
+
+| Name | Author | Source | Licence |
+|---|---|---|---|
+| TypeScript | Microsoft | https://github.com/microsoft/TypeScript | Apache-2.0 |
+| Vitest | Vitest contributors | https://github.com/vitest-dev/vitest | MIT |
+| ESLint, typescript-eslint | OpenJS / contributors | https://github.com/eslint/eslint | MIT |
+| Prettier | Prettier contributors | https://github.com/prettier/prettier | MIT |
+| playwright-core | Microsoft | https://github.com/microsoft/playwright | Apache-2.0 |
+
+Licence audit (2026-11-11): every shipped dependency is MIT (three.js) or SIL OFL 1.1
+(fonts, self-hosted). No third-party models, textures or sounds are shipped.
