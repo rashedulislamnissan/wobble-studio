@@ -34,7 +34,16 @@ export const bread: ShapeBuilder = () => ({
   sdf,
   bounds: { min: [-0.6, 0, -0.6], max: [0.6, 0.6, 0.6] },
   size: 1.0,
-  look: { roughness: 0.78, sheen: 0.5, detail: 'crumb' },
+  look: {
+    roughness: 0.78,
+    sheen: 0.5,
+    detail: 'crumb',
+    bumps: [
+      { pattern: 'crust', scale: 16, depth: 0.006 },
+      { pattern: 'pores', scale: 40, depth: 0.008 },
+    ],
+  },
+  surface: (_x, y, _z, _nx, _ny, _nz, depth) => (depth > 0.022 ? [0.96, 0, 0, 1] : [0.66 - Math.max(0, y - 0.4) * 0.3, 0.08, 1, 0.25]),
   color: (v) => {
     const p = palette(v);
     return (x, y, z, _nx, ny, _nz, depth = 0): RGB => {

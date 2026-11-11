@@ -70,7 +70,24 @@ export const cake: ShapeBuilder = () => ({
   sdf,
   bounds: { min: [-0.75, 0, -0.75], max: [0.75, H + 0.13, 0.75] },
   size: 1.1,
-  look: { roughness: 0.82, clearcoat: 0, sheen: 0.4, detail: 'crumb' },
+  look: {
+    roughness: 0.82,
+    clearcoat: 0,
+    sheen: 0.4,
+    detail: 'crumb',
+    bumps: [
+      { pattern: 'swirl', scale: 9, depth: 0.006 },
+      { pattern: 'pores', scale: 42, depth: 0.007 },
+    ],
+  },
+  surface: (x, y, z) => {
+    const [lx, lz] = toLocal(x, z);
+    const r = len2(lx, lz);
+    if (y > H - 0.03 || r > R - 0.035) return [0.42, 0.3, 1, 0]; // frosting
+    const layer = LAYERS.find((l) => y < l.to)!;
+    if (layer.kind === 'cream') return [0.5, 0.15, 0.25, 0];
+    return [0.94, 0, 0, 1]; // sponge
+  },
   color: (v) => {
     const p = palette(v);
     return (x, y, z): RGB => {

@@ -30,7 +30,9 @@ export class HandTool implements Tool {
     this.plane.setFromNormalAndCoplanarPoint(this.forward, hit.point);
     this.start.copy(hit.point);
     this.target.copy(hit.point);
-    const radius = ctx.specimen.shape.size * this.radiusFraction;
+    // Solids are held by a bigger area, so they come along whole instead of pinching.
+    const rigidity = ctx.specimen.body.params.rigidity ?? 0;
+    const radius = ctx.specimen.shape.size * (this.radiusFraction + 0.45 * rigidity);
     const piece = ctx.specimen.pieceOf(hit.object as Mesh);
     this.active = ctx.specimen.body.beginGrab(
       [hit.point.x, hit.point.y, hit.point.z],

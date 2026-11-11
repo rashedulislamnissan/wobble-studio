@@ -84,3 +84,52 @@ describe('XPBD soft body', () => {
     expect(vx / m).toBeGreaterThan(1.9);
   });
 });
+
+describe('solid and plastic materials', () => {
+  /** Mean relative edge-length change from rest (what reads as squash and stretch). */
+  const meanStrain = (body: SoftBody) => {
+    let sum = 0;
+    for (let e = 0; e < body.restLen.length; e++) {
+      const a = body.edges[e * 2] * 3, b = body.edges[e * 2 + 1] * 3;
+      const len = Math.hypot(body.pos[a] - body.pos[b], body.pos[a + 1] - body.pos[b + 1], body.pos[a + 2] - body.pos[b + 2]);
+      sum += Math.abs(len / body.restLen[e] - 1);
+    }
+    return sum / body.restLen.length;
+  };
+
+  it('shape matching keeps a solid nearly undeformed when dropped and grabbed', () => {
+    const mesh = buildLatticeTetMesh(sphere, [-R, -R, -R], [R, R, R], (2 * R) / 10);
+    const soft = new SoftBody(mesh, { stiffness: 20, bulk: Infinity, damping: 10, density: 1 });
+    const solid = new SoftBody(mesh, { stiffness: 20, bulk: Infinity, damping: 10, density: 1, rigidity: 0.9 });
+    for (const b of [soft, solid]) {
+      b.translate(0, 0.6, 0);
+      b.beginGrab([0, 1.0, 0], 0.25, 2e-5);
+      for (let f = 0; f < 40; f++) {
+        b.moveGrab([0.3, 1.6, 0]);
+        b.step(1 / 60);
+      }
+    }
+    expect(meanStrain(solid)).toBeLessThan(meanStrain(soft) * 0.15);
+    // A solid lifted by one spot comes along as a whole (centre of mass follows).
+    expect(solid.centerOfMass()[1]).toBeGreaterThan(1.0);
+  });
+
+  it('plasticity keeps a dent; recovery slowly undoes it', () => {
+    const mesh = buildLatticeTetMesh(sphere, [-R, -R, -R], [R, R, R], (2 * R) / 10);
+    const make = (recover: number) => {
+      const b = new SoftBody(mesh, { stiffness: 30, bulk: 60, damping: 20, density: 1, plastic: { yield: 0.05, rate: 6, recover } });
+      b.translate(0, 0.45, 0);
+      b.colliders.push({ kind: 'plate', y: 0.35, depth: 0, contacts: 0 });
+      for (let f = 0; f < 60; f++) b.step(1 / 60);
+      b.colliders.length = 0;
+      for (let f = 0; f < 90; f++) b.step(1 / 60);
+      let top = -Infinity;
+      for (let i = 1; i < b.pos.length; i += 3) top = Math.max(top, b.pos[i]);
+      return top;
+    };
+    const cake = make(0);
+    const bread = make(2);
+    expect(cake).toBeLessThan(0.75); // stayed squashed (rest top ≈ 0.88)
+    expect(bread).toBeGreaterThan(cake + 0.03); // bread springs back further
+  });
+});

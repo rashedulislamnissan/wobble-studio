@@ -223,6 +223,8 @@ export const OBJECTS: ObjectDef[] = [
   },
   {
     id: 'tomato',
+    // Ripe: much softer than an orange, bursts under pressure.
+    physics: { rigidity: 0.15 },
     no: 13,
     group: 'fruit',
     title: ['Ripe', 'Tomato.'],
@@ -256,6 +258,8 @@ export const OBJECTS: ObjectDef[] = [
   },
   {
     id: 'bread',
+    // Springs back.
+    physics: { plastic: { yield: 0.06, rate: 2.5, recover: 0.8 } },
     no: 15,
     group: 'soft',
     title: ['Soft', 'Loaf.'],
@@ -271,6 +275,7 @@ export const OBJECTS: ObjectDef[] = [
   },
   {
     id: 'donut',
+    physics: { plastic: { yield: 0.05, rate: 2.5, recover: 0.4 } },
     no: 16,
     group: 'soft',
     title: ['Glazed', 'Donut.'],

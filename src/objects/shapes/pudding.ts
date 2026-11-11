@@ -34,7 +34,18 @@ export const pudding: ShapeBuilder = () => ({
   sdf,
   bounds: { min: [-R_BOTTOM, 0, -R_BOTTOM], max: [R_BOTTOM, H, R_BOTTOM] },
   size: R_BOTTOM * 2,
-  look: { roughness: 0.18, clearcoat: 0.85, detail: 'none' },
+  look: {
+    roughness: 0.18,
+    clearcoat: 0.85,
+    detail: 'none',
+    bumps: [{ pattern: 'swirl', scale: 6, depth: 0.0025 }],
+  },
+  surface: (x, y, z) => {
+    const a = Math.atan2(z, x);
+    const run = Math.pow(Math.max(0, Math.sin(a * 4 + noise3(a * 2, 0, 0) * 3)), 3) * 0.16;
+    const line = H - 0.05 - run - noise3(a * 9, 1, 1) * 0.025;
+    return y > line ? [0.04, 1, 0.6, 0] : [0.24, 0.55, 1, 0];
+  },
   color: (v) => {
     const p = palette(v);
     return (x, y, z): RGB => {

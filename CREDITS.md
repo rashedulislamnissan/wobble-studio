@@ -25,7 +25,13 @@ Puffy is an original character designed for this project.
 
 ## Textures
 
-None. Surface detail (crumb, speckle, citrus membranes) is procedural.
+None. Surface colour and relief (peel dimples, crumb pores, juice cells, crust) are procedural.
+
+## Lighting
+
+| Name | Author | Source | Licence |
+|---|---|---|---|
+| Studio Small 09 (HDRI, downsampled to 512×256 by `scripts/prep-hdri.mjs`) | Sergej Majboroda | https://polyhaven.com/a/studio_small_09 | CC0 |
 
 ## Sounds
 
@@ -47,4 +53,5 @@ project, made with `scripts/thumbs.mjs` and the dev tools.
 | playwright-core | Microsoft | https://github.com/microsoft/playwright | Apache-2.0 |
 
 Licence audit (2026-11-11): every shipped dependency is MIT (three.js) or SIL OFL 1.1
-(fonts, self-hosted). No third-party models, textures or sounds are shipped.
+(fonts, self-hosted); the one image asset (the studio HDRI) is CC0. No third-party models,
+textures or sounds are shipped.

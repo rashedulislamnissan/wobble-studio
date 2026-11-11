@@ -15,6 +15,9 @@ interface PieceMeta {
   detailIds: number[];
 }
 
+/** Details (eyes, stems, berries, seeds) default to a smooth, glossy finish. */
+const DETAIL_SURF: [number, number, number, number] = [0.22, 0.85, 0, 0];
+
 function prepareDetail(g: BufferGeometry): BufferGeometry {
   let d = g;
   for (const name of Object.keys(d.attributes)) {
@@ -22,6 +25,10 @@ function prepareDetail(g: BufferGeometry): BufferGeometry {
   }
   if (!d.index) d = mergeVertices(d, 1e-6);
   if (!d.getAttribute('normal')) d.computeVertexNormals();
+  const n = d.getAttribute('position').count;
+  const surf = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) surf.set(DETAIL_SURF, i * 4);
+  d.setAttribute('surf', new BufferAttribute(surf, 4));
   return d;
 }
 
@@ -67,6 +74,7 @@ export class ObjectMesher {
     const extent = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
     const resolution = Math.max(8, Math.ceil(extent / this.h));
     const body = meshSdf(sdf, min, max, { resolution, color: this.colorFn(variant) });
+    this.addSurface(body);
     const all = this.details(variant);
     const parts = detailIds.map((i) => all[i]).filter(Boolean);
     const geometry = parts.length ? mergeGeometries([body, ...parts.map((p) => p.clone())], false)! : body;
@@ -79,6 +87,26 @@ export class ObjectMesher {
     const { min, max } = this.shape.bounds;
     return this.build(this.shape.sdf, min, max, variant, this.detailCentroids.map((_, i) => i));
   }
+
+  /** Per-vertex finish (roughness, clearcoat, relief weights). */
+  private addSurface(g: BufferGeometry) {
+    const pos = g.getAttribute('position').array as Float32Array;
+    const nrm = g.getAttribute('normal').array as Float32Array;
+    const n = pos.length / 3;
+    const surf = new Float32Array(n * 4);
+    const fn = this.shape.surface;
+    const sdf = this.shape.sdf;
+    const r = this.defaults.roughness, c = this.defaults.clearcoat;
+    for (let i = 0; i < n; i++) {
+      const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
+      const v = fn ? fn(x, y, z, nrm[i * 3], nrm[i * 3 + 1], nrm[i * 3 + 2], Math.max(0, -sdf(x, y, z))) : [r, c, 1, 1];
+      surf.set(v, i * 4);
+    }
+    g.setAttribute('surf', new BufferAttribute(surf, 4));
+  }
+
+  /** Fallback finish when a shape has no surface function. */
+  defaults = { roughness: 0.4, clearcoat: 0.3 };
 
   recolor(geometry: BufferGeometry, v: Variant) {
     const meta = geometry.userData.piece as PieceMeta | undefined;

@@ -31,7 +31,20 @@ export const donut: ShapeBuilder = () => ({
   sdf,
   bounds: { min: [-RR - r0, 0, -RR - r0], max: [RR + r0, CY + r0 + 0.01, RR + r0] },
   size: (RR + r0) * 2,
-  look: { roughness: 0.55, clearcoat: 0.8, sheen: 0.3, detail: 'crumb' },
+  look: {
+    roughness: 0.55,
+    clearcoat: 0.8,
+    sheen: 0.3,
+    detail: 'crumb',
+    bumps: [
+      { pattern: 'swirl', scale: 10, depth: 0.0025 },
+      { pattern: 'pores', scale: 38, depth: 0.006 },
+    ],
+  },
+  surface: (x, y, z, _nx, _ny, _nz, depth) => {
+    if (depth > 0.02) return [0.95, 0, 0, 1];
+    return y > glazeLine(x, z) ? [0.1, 1, 1, 0] : [0.72, 0.05, 0, 0.6];
+  },
   color: (v) => {
     const p = palette(v);
     return (x, y, z, _nx, _ny, _nz, depth = 0): RGB => {

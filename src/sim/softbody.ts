@@ -25,6 +25,18 @@ export interface SoftBodyParams {
   damping: number;
   /** Simulation density (mass per unit volume). */
   density: number;
+  /**
+   * Shape matching strength per frame, 0..1 (Müller et al. 2005). 0 = pure soft body
+   * (jelly); near 1 = a solid that moves as one piece and only gives slightly (apple,
+   * cheese, chocolate). Applied per piece, so cut pieces stay solid too.
+   */
+  rigidity?: number;
+  /**
+   * Plasticity: strain beyond `yield` (fraction of rest length) flows into the rest shape
+   * at `rate` (1/s), so a dent stays; `recover` (1/s) slowly restores the original shape
+   * (bread springs back, cake mostly doesn't).
+   */
+  plastic?: { yield: number; rate: number; recover: number };
 }
 
 // Volume-gradient vertex order (face opposite each vertex), consistent with tetVolume().
@@ -126,21 +138,192 @@ export class SoftBody {
     }
   }
 
+  /** The original rest shape (plasticity and inflation work relative to it). */
   private restLen0: Float32Array | null = null;
   private restVol0: Float32Array | null = null;
+  private inflation = 1;
+
+  private ensureRestBase() {
+    if (!this.restLen0) {
+      this.restLen0 = new Float32Array(this.restLen);
+      this.restVol0 = new Float32Array(this.restVol);
+    }
+  }
 
   /**
    * Scale the rest shape (1 = normal). Used for Puffy's "Puff up": the body swells as its
    * springs and volumes relax toward the new rest size, then deflates when set back.
    */
   setInflation(f: number) {
-    if (!this.restLen0) {
-      this.restLen0 = new Float32Array(this.restLen);
-      this.restVol0 = new Float32Array(this.restVol);
-    }
+    this.ensureRestBase();
+    this.inflation = f;
     const f3 = f * f * f;
-    for (let e = 0; e < this.restLen.length; e++) this.restLen[e] = this.restLen0[e] * f;
+    for (let e = 0; e < this.restLen.length; e++) this.restLen[e] = this.restLen0![e] * f;
     for (let t = 0; t < this.restVol.length; t++) this.restVol[t] = this.restVol0![t] * f3;
+  }
+
+  /** Undo plastic deformation (Reset). */
+  restoreRestShape() {
+    if (!this.restLen0) return;
+    this.restLen.set(this.restLen0);
+    this.restVol.set(this.restVol0!);
+    this.inflation = 1;
+  }
+
+  /**
+   * Plastic flow, once per frame: edges and tets stretched or squashed beyond the yield
+   * strain take on part of that deformation as their new rest shape; meanwhile the rest
+   * shape creeps back toward the original at the recovery rate.
+   */
+  private applyPlasticity(dt: number) {
+    const pl = this.params.plastic;
+    if (!pl) return;
+    this.ensureRestBase();
+    const flow = 1 - Math.exp(-pl.rate * dt);
+    const back = 1 - Math.exp(-pl.recover * dt);
+    const { pos, edges, restLen, tets, restVol } = this;
+    const base = this.restLen0!;
+    const baseV = this.restVol0!;
+    for (let e = 0; e < restLen.length; e++) {
+      const a = edges[e * 2] * 3, b = edges[e * 2 + 1] * 3;
+      const dx = pos[a] - pos[b], dy = pos[a + 1] - pos[b + 1], dz = pos[a + 2] - pos[b + 2];
+      const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      const r0 = base[e];
+      const over = len - restLen[e];
+      const lim = pl.yield * r0;
+      let r = restLen[e];
+      if (over > lim) r += (over - lim) * flow;
+      else if (over < -lim) r += (over + lim) * flow;
+      r += (r0 - r) * back;
+      // Never let an edge collapse or balloon: keep within a sane band of the original.
+      restLen[e] = Math.min(r0 * 1.6, Math.max(r0 * 0.45, r));
+    }
+    for (let t = 0; t < restVol.length; t++) {
+      const k = t * 4;
+      const v = tetVolume(pos, tets[k], tets[k + 1], tets[k + 2], tets[k + 3]);
+      const v0 = baseV[t];
+      const over = v - restVol[t];
+      const lim = pl.yield * 2 * v0;
+      let r = restVol[t];
+      if (over > lim) r += (over - lim) * flow;
+      else if (over < -lim) r += (over + lim) * flow;
+      r += (v0 - r) * back;
+      restVol[t] = Math.min(v0 * 2, Math.max(v0 * 0.3, r));
+    }
+  }
+
+  // ---------------------------------------------------------------- shape matching
+
+  private smRest: Float64Array | null = null; // rest offsets from piece centroid
+  private smQuat: Float64Array | null = null; // warm-started rotation per piece
+
+  /** Rest offsets per node relative to its piece's rest centroid (mass-weighted). */
+  private prepareShapeMatching() {
+    const n = this.count;
+    const pieces = Math.max(1, this.pieceCount);
+    const piece = this.nodePiece.length === n ? this.nodePiece : new Uint16Array(n);
+    const cm = new Float64Array(pieces * 4);
+    for (let i = 0; i < n; i++) {
+      const p = piece[i] * 4, m = this.mass[i];
+      cm[p] += this.rest[i * 3] * m;
+      cm[p + 1] += this.rest[i * 3 + 1] * m;
+      cm[p + 2] += this.rest[i * 3 + 2] * m;
+      cm[p + 3] += m;
+    }
+    this.smRest = new Float64Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const p = piece[i] * 4, M = cm[p + 3] || 1;
+      this.smRest[i * 3] = this.rest[i * 3] - cm[p] / M;
+      this.smRest[i * 3 + 1] = this.rest[i * 3 + 1] - cm[p + 1] / M;
+      this.smRest[i * 3 + 2] = this.rest[i * 3 + 2] - cm[p + 2] / M;
+    }
+    this.smQuat = new Float64Array(pieces * 4);
+    for (let p = 0; p < pieces; p++) this.smQuat[p * 4 + 3] = 1;
+  }
+
+  /**
+   * Pull every piece toward its best rigid fit (rotation from the polar decomposition of the
+   * moment matrix, warm-started quaternion iteration). Scales are inflation-aware.
+   */
+  private solveShapeMatching(k: number) {
+    if (!this.smRest || this.smRest.length !== this.count * 3) this.prepareShapeMatching();
+    const n = this.count;
+    const pieces = Math.max(1, this.pieceCount);
+    const piece = this.nodePiece.length === n ? this.nodePiece : new Uint16Array(n);
+    const { pos, mass } = this;
+    const q = this.smRest!;
+    const s = this.inflation;
+    // Centroids.
+    const c = new Float64Array(pieces * 4);
+    for (let i = 0; i < n; i++) {
+      const p = piece[i] * 4, m = mass[i];
+      c[p] += pos[i * 3] * m; c[p + 1] += pos[i * 3 + 1] * m; c[p + 2] += pos[i * 3 + 2] * m; c[p + 3] += m;
+    }
+    for (let p = 0; p < pieces; p++) {
+      const M = c[p * 4 + 3] || 1;
+      c[p * 4] /= M; c[p * 4 + 1] /= M; c[p * 4 + 2] /= M;
+    }
+    // Moment matrices A = sum m (x - c) q^T.
+    const A = new Float64Array(pieces * 9);
+    for (let i = 0; i < n; i++) {
+      const p = piece[i], m = mass[i];
+      const px = pos[i * 3] - c[p * 4], py = pos[i * 3 + 1] - c[p * 4 + 1], pz = pos[i * 3 + 2] - c[p * 4 + 2];
+      const qx = q[i * 3] * m, qy = q[i * 3 + 1] * m, qz = q[i * 3 + 2] * m;
+      const o = p * 9;
+      A[o] += px * qx; A[o + 1] += px * qy; A[o + 2] += px * qz;
+      A[o + 3] += py * qx; A[o + 4] += py * qy; A[o + 5] += py * qz;
+      A[o + 6] += pz * qx; A[o + 7] += pz * qy; A[o + 8] += pz * qz;
+    }
+    const R = new Float64Array(pieces * 9);
+    for (let p = 0; p < pieces; p++) this.rotationOf(A, p, R);
+    for (let i = 0; i < n; i++) {
+      const p = piece[i];
+      const o = p * 9;
+      const qx = q[i * 3] * s, qy = q[i * 3 + 1] * s, qz = q[i * 3 + 2] * s;
+      const gx = R[o] * qx + R[o + 1] * qy + R[o + 2] * qz + c[p * 4];
+      const gy = R[o + 3] * qx + R[o + 4] * qy + R[o + 5] * qz + c[p * 4 + 1];
+      const gz = R[o + 6] * qx + R[o + 7] * qy + R[o + 8] * qz + c[p * 4 + 2];
+      pos[i * 3] += (gx - pos[i * 3]) * k;
+      pos[i * 3 + 1] += (gy - pos[i * 3 + 1]) * k;
+      pos[i * 3 + 2] += (gz - pos[i * 3 + 2]) * k;
+    }
+  }
+
+  /** Müller 2016 rotation extraction, a few warm-started iterations per call. */
+  private rotationOf(A: Float64Array, p: number, out: Float64Array) {
+    const qq = this.smQuat!;
+    let x = qq[p * 4], y = qq[p * 4 + 1], z = qq[p * 4 + 2], w = qq[p * 4 + 3];
+    const a = p * 9;
+    for (let it = 0; it < 6; it++) {
+      // R from quaternion (columns r0, r1, r2).
+      const r00 = 1 - 2 * (y * y + z * z), r01 = 2 * (x * y - z * w), r02 = 2 * (x * z + y * w);
+      const r10 = 2 * (x * y + z * w), r11 = 1 - 2 * (x * x + z * z), r12 = 2 * (y * z - x * w);
+      const r20 = 2 * (x * z - y * w), r21 = 2 * (y * z + x * w), r22 = 1 - 2 * (x * x + y * y);
+      // omega = sum_j r_j × a_j / |sum r_j · a_j|
+      const a0x = A[a], a0y = A[a + 3], a0z = A[a + 6];
+      const a1x = A[a + 1], a1y = A[a + 4], a1z = A[a + 7];
+      const a2x = A[a + 2], a2y = A[a + 5], a2z = A[a + 8];
+      const ox = r10 * a0z - r20 * a0y + (r11 * a1z - r21 * a1y) + (r12 * a2z - r22 * a2y);
+      const oy = r20 * a0x - r00 * a0z + (r21 * a1x - r01 * a1z) + (r22 * a2x - r02 * a2z);
+      const oz = r00 * a0y - r10 * a0x + (r01 * a1y - r11 * a1x) + (r02 * a2y - r12 * a2x);
+      const den = Math.abs(r00 * a0x + r10 * a0y + r20 * a0z + r01 * a1x + r11 * a1y + r21 * a1z + r02 * a2x + r12 * a2y + r22 * a2z) + 1e-12;
+      const wx = ox / den, wy = oy / den, wz = oz / den;
+      const ang = Math.sqrt(wx * wx + wy * wy + wz * wz);
+      if (ang < 1e-9) break;
+      const h = ang / 2, sn = Math.sin(h) / ang;
+      const dx = wx * sn, dy = wy * sn, dz = wz * sn, dw = Math.cos(h);
+      const nx = dw * x + dx * w + dy * z - dz * y;
+      const ny = dw * y - dx * z + dy * w + dz * x;
+      const nz = dw * z + dx * y - dy * x + dz * w;
+      const nw = dw * w - dx * x - dy * y - dz * z;
+      const l = Math.sqrt(nx * nx + ny * ny + nz * nz + nw * nw);
+      x = nx / l; y = ny / l; z = nz / l; w = nw / l;
+    }
+    qq[p * 4] = x; qq[p * 4 + 1] = y; qq[p * 4 + 2] = z; qq[p * 4 + 3] = w;
+    const o = p * 9;
+    out[o] = 1 - 2 * (y * y + z * z); out[o + 1] = 2 * (x * y - z * w); out[o + 2] = 2 * (x * z + y * w);
+    out[o + 3] = 2 * (x * y + z * w); out[o + 4] = 1 - 2 * (x * x + z * z); out[o + 5] = 2 * (y * z - x * w);
+    out[o + 6] = 2 * (x * z - y * w); out[o + 7] = 2 * (y * z + x * w); out[o + 8] = 1 - 2 * (x * x + y * y);
   }
 
   /** Translate the whole body (used to place it on the stage). */
@@ -154,6 +337,7 @@ export class SoftBody {
   }
 
   reset(dx = 0, dy = 0, dz = 0) {
+    this.restoreRestShape();
     this.pos.set(this.rest);
     this.vel.fill(0);
     this.endGrab();
@@ -164,11 +348,16 @@ export class SoftBody {
   step(dt: number) {
     const n = this.substeps;
     const sdt = dt / n;
+    // Per-substep share of the per-frame rigidity, so feel doesn't depend on substeps.
+    const rig = Math.min(0.995, this.params.rigidity ?? 0);
+    const smK = rig > 0 ? 1 - Math.pow(1 - rig, 1 / n) : 0;
     for (let s = 0; s < n; s++) {
       this.integrate(sdt);
       this.solveEdges(sdt);
       this.solveVolumes(sdt);
       if (this.grabbing) this.solveGrab(sdt);
+      // After the grab: a held solid is carried as a whole instead of stretching locally.
+      if (smK > 0) this.solveShapeMatching(smK);
       this.solveCollisions();
       this.updateVelocities(sdt);
       this.applyContactFriction(sdt);
@@ -177,6 +366,7 @@ export class SoftBody {
     }
     this.applyContactDrag(dt);
     this.applyAirDragAndClamp(dt);
+    this.applyPlasticity(dt);
   }
 
   /**
@@ -624,7 +814,9 @@ export class SoftBody {
     this.grabWeight = new Float32Array(weights);
     this.grabOffset = new Float32Array(offsets);
     this.grabTarget.set([hit[0], hit[1], hit[2]]);
-    this.grabCompliance = compliance;
+    // Solids are carried, not stretched: a softer grip lets shape matching move the whole
+    // body (it trails the pointer slightly, which reads as weight).
+    this.grabCompliance = compliance * (1 + 15 * (this.params.rigidity ?? 0));
     this.grabbing = true;
     return true;
   }

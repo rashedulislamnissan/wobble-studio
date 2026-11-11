@@ -33,18 +33,32 @@ export const tomato: ShapeBuilder = () => ({
   sdf,
   bounds: { min: [-0.48, 0, -0.48], max: [0.48, CY + R * FLAT + 0.02, 0.48] },
   size: 0.96,
-  look: { roughness: 0.16, clearcoat: 1 },
+  look: {
+    roughness: 0.16,
+    clearcoat: 1,
+    smoothCoat: true,
+    bumps: [
+      { pattern: 'grain', scale: 70, depth: 0.0005 },
+      { pattern: 'cells', scale: 32, depth: 0.003 },
+    ],
+  },
+  surface: (_x, _y, _z, _nx, _ny, _nz, depth) => (depth > 0.025 ? [0.14, 1, 0, 1] : [0.1, 1, 1, 0]),
   color: (v) => {
     const p = palette(v);
     return (x, y, z, _nx, _ny, _nz, depth = 0): RGB => {
       if (depth > 0.025) {
-        // Inside: walls between seed chambers, glossy gel and seeds.
+        // Inside, in 3D: thick outer wall, pale central core, and oval gel chambers
+        // (separated by thin walls) holding seeds - so any cut shows a real cross-section.
         const a = Math.atan2(z, x);
         const r = len2(x, z);
-        const chamber = Math.cos(5 * a) > -0.2 && r > 0.1 && r < 0.32;
-        if (!chamber) return p.wall;
-        const seed = noise3(x * 55, y * 55, z * 55) > 0.78;
-        return seed ? p.seed : p.gel;
+        const sector = Math.cos(5 * a); // 1 at chamber centres, -1 at the walls between
+        const oval = ((y - CY) / 0.22) ** 2 + ((r - 0.19) / 0.12) ** 2;
+        if (r < 0.075) return mix(p.wall, p.seed, 0.35); // core column
+        if (sector > -0.55 && oval < 1) {
+          const seed = noise3(x * 48, y * 48, z * 48) > 0.7 && oval > 0.25;
+          return seed ? p.seed : mix(p.gel, p.wall, oval * 0.3);
+        }
+        return mix(p.wall, p.skin, smoothstep(0.32, 0.4, r) * 0.6);
       }
       const shoulder = smoothstep(CY + 0.1, CY + R * FLAT, y) * 0.5;
       return mix(p.skin, p.shoulder, shoulder + noise3(x * 8, y * 8, z * 8) * 0.12);

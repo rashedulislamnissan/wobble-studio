@@ -37,6 +37,10 @@ export interface MaterialDef {
   /** Slider end labels. */
   firmnessLabels: [string, string];
   dampingLabels: [string, string];
+  /** How solid it is: shape-matching strength per frame (0 = jelly, ~1 = rigid). */
+  rigidity: number;
+  /** Plastic flow (dents that stay) and slow recovery; absent = perfectly elastic. */
+  plastic?: { yield: number; rate: number; recover: number };
   /** Debris when cut, struck or crumbled; colour defaults to the variant colour. */
   debris: { kind: ParticleKind; color?: string };
   /** Rendering hints. */

@@ -57,7 +57,24 @@ export const orangeSlice: ShapeBuilder = () => ({
   bounds: { min: [-0.7, 0, -0.5], max: [0.7, 0.64, 0.5] },
   size: 1.3,
   inflate: 0.35,
-  look: { roughness: 0.28, clearcoat: 0.9, detail: 'none', shade: shadeCitrus },
+  look: {
+    roughness: 0.28,
+    clearcoat: 0.9,
+    detail: 'none',
+    shade: shadeCitrus,
+    bumps: [
+      { pattern: 'dimples', scale: 55, depth: 0.003 },
+      { pattern: 'cells', scale: 40, depth: 0.005 },
+    ],
+  },
+  surface: (x, y, z) => {
+    const [lx, lz] = toLocal(x, z);
+    const r = len2(lx, y);
+    const onFace = Math.abs(lz) > HALF_T - ROUND * 0.6;
+    if (r > R - 0.05 || (!onFace && r > R - 0.12)) return [0.42, 0.55, 1, 0]; // peel
+    if (r > R - 0.1) return [0.62, 0.15, 0, 0.2]; // pith
+    return [0.16, 1, 0, 1]; // juicy flesh
+  },
   color: (v) => {
     const p = palette(v);
     return (x, y, z): RGB => {

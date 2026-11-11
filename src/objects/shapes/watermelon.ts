@@ -50,7 +50,21 @@ export const watermelon: ShapeBuilder = () => ({
   sdf,
   bounds: { min: [-0.62, 0, -0.55], max: [0.62, TIP_Y + 0.02, 0.55] },
   size: 1.0,
-  look: { roughness: 0.32, clearcoat: 0.7 },
+  look: {
+    roughness: 0.32,
+    clearcoat: 0.7,
+    bumps: [
+      { pattern: 'grain', scale: 60, depth: 0.0008 },
+      { pattern: 'cells', scale: 24, depth: 0.0045 },
+    ],
+  },
+  surface: (x, y, z) => {
+    const [lx] = yaw(x, z, -TURN);
+    const r = len2(lx, TIP_Y - y);
+    if (r > R - 0.065) return [0.3, 0.75, 1, 0];
+    if (r > R - 0.11) return [0.45, 0.4, 0, 0.3];
+    return [0.24, 0.9, 0, 1];
+  },
   color: (v) => {
     const p = palette(v);
     return (x, y, z): RGB => {

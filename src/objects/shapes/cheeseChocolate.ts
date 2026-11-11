@@ -63,7 +63,16 @@ export const cheese: ShapeBuilder = (variant) => {
     sdf,
     bounds: { min: [-0.62, 0, -0.62], max: [0.62, CH, 0.62] },
     size: 1.1,
-    look: { roughness: 0.5, clearcoat: 0.2 },
+    look: {
+      roughness: 0.5,
+      clearcoat: 0.2,
+      bumps: [
+        { pattern: 'grain', scale: 40, depth: 0.0012 },
+        { pattern: 'cells', scale: 60, depth: 0.0008 },
+      ],
+    },
+    surface: (_x: number, _y: number, _z: number, _nx: number, _ny: number, _nz: number, depth: number) =>
+      depth > 0.01 ? [0.55, 0.1, 0.6, 1] : [0.46, 0.22, 1, 0.3],
     color: (v: Variant) => {
       const p = CHEESE[v.id] ?? CHEESE.swiss;
       const body = lin(p.body), rind = lin(p.rind);
@@ -126,7 +135,8 @@ export const chocolate: ShapeBuilder = () => ({
   sdf: chocoSdf,
   bounds: { min: [-0.62, 0, -0.62], max: [0.62, BASE_H + PILLOW_H + 0.01, 0.62] },
   size: 1.0,
-  look: { roughness: 0.32, clearcoat: 0.45 },
+  look: { roughness: 0.2, clearcoat: 0.75, smoothCoat: true, bumps: [{ pattern: 'grain', scale: 18, depth: 0.0004 }] },
+  surface: (_x, _y, _z, _nx, _ny, _nz, depth) => (depth > 0.01 ? [0.62, 0.05, 1, 0] : [0.18, 0.75, 1, 0]),
   snapPlanes: SNAP,
   color: (v) => {
     const c = lin(v.color);

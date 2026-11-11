@@ -5,6 +5,7 @@
 import {
   Color,
   DirectionalLight,
+  EquirectangularReflectionMapping,
   HemisphereLight,
   Mesh,
   MeshBasicNodeMaterial,
@@ -30,6 +31,7 @@ import {
   vec4,
 } from 'three/tsl';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { RENDER } from '../config';
 import type { Tint } from '../tint/tint';
 
@@ -83,10 +85,23 @@ export class Stage {
     const pmrem = new PMREMGenerator(renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.scene.environmentIntensity = 0.55;
+    // A real photographed studio (octaboxes on a white cyc, CC0 from Poly Haven) for
+    // believable reflections. Loaded after the first frame; the procedural room covers it.
+    new HDRLoader()
+      .loadAsync(`${import.meta.env.BASE_URL}env/studio.hdr`)
+      .then((tex) => {
+        tex.mapping = EquirectangularReflectionMapping;
+        this.scene.environment = tex;
+        this.scene.environmentIntensity = 0.95;
+        this.scene.environmentRotation.set(0, 2.4, 0);
+      })
+      .catch(() => {
+        /* keep the procedural room */
+      });
 
     renderer.shadowMap.type = VSMShadowMap;
 
-    const hemi = new HemisphereLight(0xffffff, 0xd9d4cc, 0.9);
+    const hemi = new HemisphereLight(0xffffff, 0xd9d4cc, 0.55);
     this.scene.add(hemi);
 
     this.keyLight = new DirectionalLight(0xfffaf2, 2.1);

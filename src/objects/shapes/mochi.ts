@@ -18,7 +18,8 @@ export const mochi: ShapeBuilder = () => ({
   bounds: { min: [-0.64, 0, -0.6], max: [0.64, 0.38, 0.6] },
   size: 1.28,
   inflate: 0.36,
-  look: { roughness: 0.62, sheen: 0.6 },
+  look: { roughness: 0.62, sheen: 0.7, bumps: [{ pattern: 'grain', scale: 95, depth: 0.0009 }] },
+  surface: () => [0.66, 0.05, 1, 0],
   color: (v) => {
     const body = lin(v.color);
     const dust = mix(body, [1, 1, 1], 0.55);

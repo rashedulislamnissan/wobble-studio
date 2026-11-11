@@ -29,7 +29,17 @@ export const apple: ShapeBuilder = () => ({
   sdf,
   bounds: { min: [-0.48, -0.0, -0.48], max: [0.48, 0.86, 0.48] },
   size: 0.96,
-  look: { roughness: 0.32, clearcoat: 0.55, detail: 'speckle' },
+  look: {
+    roughness: 0.32,
+    clearcoat: 0.85,
+    detail: 'speckle',
+    smoothCoat: true,
+    bumps: [
+      { pattern: 'grain', scale: 120, depth: 0.00028 },
+      { pattern: 'cells', scale: 75, depth: 0.0022 },
+    ],
+  },
+  surface: (_x, _y, _z, _nx, _ny, _nz, depth) => (depth > 0.014 ? [0.55, 0.3, 0, 1] : [0.33, 0.9, 1, 0]),
   color: (v) => {
     const p = palette(v);
     const flesh = lin('#F7EED2');

@@ -152,6 +152,8 @@ export async function startStudio(params: AppParams) {
     damping: rangeValue(m.damping, state.damp),
     bulk: m.bulk,
     density: m.density,
+    rigidity: state.def.physics?.rigidity ?? m.rigidity,
+    plastic: state.def.physics?.plastic ?? m.plastic,
   });
 
   function applyTint(instant: boolean) {
@@ -285,6 +287,10 @@ export async function startStudio(params: AppParams) {
     if (token !== loadToken) return; // a newer selection won
 
     mesher = new ObjectMesher(shape, rt.quality.meshResolution, variant);
+    mesher.defaults =
+      m.look.kind === 'jelly'
+        ? { roughness: 0.1, clearcoat: 1 }
+        : { roughness: shape.look?.roughness ?? m.look.roughness, clearcoat: shape.look?.clearcoat ?? m.look.clearcoat ?? 0 };
     const mat: Material =
       m.look.kind === 'jelly' ? createJellyMaterial(m.look.clarity).material : createSurfaceMaterial(m, shape.look);
     queue = [];

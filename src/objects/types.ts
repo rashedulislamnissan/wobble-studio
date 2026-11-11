@@ -3,6 +3,13 @@ import type { MaterialId } from '../materials/types';
 import type { Sdf, Vec3Tuple } from '../sim/lattice';
 import type { TintOverride } from '../tint/tint';
 import type { ColorFn } from './mesher';
+import type { BumpLayer } from '../render/surface';
+
+/**
+ * Surface finish at a point: [roughness, clearcoat, bump layer A weight, bump layer B
+ * weight]. `depth` > 0 on faces exposed by cutting.
+ */
+export type SurfaceFn = (x: number, y: number, z: number, nx: number, ny: number, nz: number, depth: number) => [number, number, number, number];
 
 export type Group = 'jelly' | 'fruit' | 'soft' | 'firm';
 
@@ -48,6 +55,8 @@ export interface ObjectDef {
   actions: ObjectAction[];
   /** Lazy shape module, so only the selected object's code is loaded. */
   load: () => Promise<ShapeBuilder>;
+  /** Behaviour overrides where this object differs from its material. */
+  physics?: { rigidity?: number; plastic?: { yield: number; rate: number; recover: number } };
   /** Default Firmness slider position (0..1) if this object differs from its material. */
   firmness?: number;
   /** The variety changes the shape itself (Swiss vs cheddar): rebuild on change. */
@@ -77,7 +86,13 @@ export interface Shape {
      * nodes, returns a vec3 node. For patterns finer than the mesh (citrus membranes).
      */
     shade?: (base: unknown, rest: unknown) => unknown;
+    /** Keep the clearcoat smooth over textured relief (wax, tempered chocolate). */
+    smoothCoat?: boolean;
+    /** Up to two procedural relief layers (weighted per point by `surface`). */
+    bumps?: BumpLayer[];
   };
+  /** Finish per point (gloss on skin, matte in the flesh...). Default: uniform look. */
+  surface?: SurfaceFn;
   /** Lattice inflation override (default 0.3). */
   inflate?: number;
   /**

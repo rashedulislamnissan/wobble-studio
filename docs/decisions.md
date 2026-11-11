@@ -129,3 +129,27 @@ desktop (embedding uses precomputed tet inverses and a capped neighbourhood sear
 mesher samples narrow-band). The knife's 0.26 s press animation masks most of it.
 **Follow-up:** time-slice meshing across the press frames (generator-based mesher) so phones
 never hitch.
+
+---
+
+## D6 — Solids and sponges: shape matching and plasticity; realism pass
+
+**Date:** 2026-11-11 · **Owner feedback:** "fruit and cake shouldn't be like rubber".
+
+- **Rigidity (shape matching, Müller 2005).** Each piece is pulled toward its best rigid fit
+  every substep, with a per-frame strength per material (apple 0.85, cheese 0.85, chocolate
+  0.96, juicy fruit 0.45, tomato 0.15, jelly 0). It runs after the grab, and solids get a
+  wider, gentler grip, so they are carried whole and trail the hand slightly (weight) instead
+  of stretching. Mean strain under a grab drops ~40x versus the pure soft body (tested).
+- **Plasticity.** Strain beyond a yield fraction flows into the rest shape; a recovery rate
+  creeps it back. Cake keeps a dent (recover 0.12/s), bread springs back (0.8/s), mochi holds a
+  stretch for a while. Reset restores the original rest shape.
+- **Realism.** A real photographed studio (CC0 HDRI, 512 KB, lazy-loaded) replaces the
+  procedural room for reflections. A per-vertex `surf` attribute gives each part of an object
+  its own roughness, clearcoat and relief (waxy apple skin vs granular flesh, satin frosting vs
+  porous sponge). Relief is procedural in rest space (Worley/value noise: peel dimples, juice
+  cells, pores, crust) and shades through a screen-space bump normal; on wet surfaces the
+  clearcoat follows the relief, on waxy ones it stays smooth.
+- **Procedural over photo textures:** SDF meshes have no UVs; triplanar photo textures would
+  cost ~0.5 MB per object and still tile visibly. Procedural detail is resolution-free, moves
+  with the deformation and costs nothing to download.
