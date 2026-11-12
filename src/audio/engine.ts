@@ -76,6 +76,10 @@ const BANKS: Record<MaterialId, Bank> = {
 };
 
 const STORAGE_KEY = 'wobble.sound';
+/** Overall loudness: comfortable, never startling. */
+const MASTER_VOLUME = 0.6;
+/** Everything above this is gently rolled off (no sharp, piercing highs). */
+const MASTER_LOWPASS_HZ = 3800;
 /** Minimum spacing between sounds of the same event (seconds). */
 const MIN_GAP: Record<SoundEvent, number> = {
   impact: 0.09,
@@ -125,15 +129,21 @@ export class AudioEngine {
       const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!AC) return;
       this.ctx = new AC({ latencyHint: 'interactive' });
+      // Gentle master chain: a soft low-pass takes the edge off anything bright, then a
+      // slow, mild compressor keeps stacked sounds from getting loud.
+      const soften = this.ctx.createBiquadFilter();
+      soften.type = 'lowpass';
+      soften.frequency.value = MASTER_LOWPASS_HZ;
+      soften.Q.value = 0.5;
       const comp = this.ctx.createDynamicsCompressor();
-      comp.threshold.value = -16;
-      comp.knee.value = 12;
-      comp.ratio.value = 4;
-      comp.attack.value = 0.003;
-      comp.release.value = 0.12;
+      comp.threshold.value = -20;
+      comp.knee.value = 18;
+      comp.ratio.value = 3;
+      comp.attack.value = 0.01;
+      comp.release.value = 0.2;
       this.master = this.ctx.createGain();
-      this.master.gain.value = this.enabled ? 0.85 : 0;
-      this.master.connect(comp).connect(this.ctx.destination);
+      this.master.gain.value = this.enabled ? MASTER_VOLUME : 0;
+      this.master.connect(soften).connect(comp).connect(this.ctx.destination);
     }
     if (this.ctx.state === 'suspended') void this.ctx.resume();
   }
@@ -145,7 +155,7 @@ export class AudioEngine {
     } catch {
       /* ignore */
     }
-    if (this.master && this.ctx) this.master.gain.setTargetAtTime(on ? 0.85 : 0, this.ctx.currentTime, 0.03);
+    if (this.master && this.ctx) this.master.gain.setTargetAtTime(on ? MASTER_VOLUME : 0, this.ctx.currentTime, 0.03);
     this.onChange?.(on);
   }
 
