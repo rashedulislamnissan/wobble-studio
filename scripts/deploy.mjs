@@ -9,7 +9,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: 'inherit', shell: process.platform === 'win32', ...opts });
+// Only npx needs a shell on Windows (it is a .cmd); git must not go through one, or
+// arguments with spaces (the author name) get split.
+const run = (cmd, args, opts = {}) =>
+  execFileSync(cmd, args, { stdio: 'inherit', shell: process.platform === 'win32' && cmd === 'npx', ...opts });
 const read = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8' }).trim();
 
 const remote = read('git', ['remote', 'get-url', 'origin']);
