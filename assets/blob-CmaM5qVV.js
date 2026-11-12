@@ -1,0 +1,1 @@
+import{n as e}from"./color-5uFY9uPb.js";import{a as t}from"./sdf-CwJAAQDX.js";var n=.55,r=1.18,i=()=>({sdf:(e,i,a)=>t(e,i*r,a)-n,bounds:{min:[-.55,-.55/r,-.55],max:[n,n/r,n]},size:n*2,color:t=>{let n=e(t.color);return()=>n}});export{i as blob};
