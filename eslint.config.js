@@ -20,6 +20,7 @@ export default tseslint.config(
         innerWidth: 'readonly',
         innerHeight: 'readonly',
         Image: 'readonly',
+        OfflineAudioContext: 'readonly',
         Buffer: 'readonly',
       },
     },
