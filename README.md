@@ -56,13 +56,22 @@ npx tsx scripts/sim-probe.ts 10 14   # lattice resolution, substeps
 
 ## Deploy (free)
 
-**GitHub Pages** — push to `main` on GitHub. The workflow in `.github/workflows/deploy.yml`
-builds and publishes automatically. One-time setup: repository *Settings → Pages → Source:
-GitHub Actions*.
+Live at **https://rashedulislamnissan.github.io/wobble-studio/** (GitHub Pages, free).
 
-**Cloudflare Pages** (alternative, also free) — connect the repository, build command
-`npm run build`, output directory `dist`, environment variable
-`VITE_SITE_URL=https://<your-site>/` (used for social-card links).
+```bash
+npm run deploy
+```
+
+Builds the site and publishes `dist/` to the `gh-pages` branch of `origin`; GitHub Pages
+serves that branch. No paid services, no GitHub Actions required.
+
+**Optional automatic deploys:** `docs/github-actions-deploy.yml` builds and deploys on every
+push to `main`. To use it, move it to `.github/workflows/deploy.yml`, set Pages to *Source:
+GitHub Actions*, and push with a token that has the `workflow` scope
+(`gh auth refresh -h github.com -s workflow`).
+
+**Cloudflare Pages** (alternative, also free): build command `npm run build`, output
+directory `dist`, environment variable `VITE_SITE_URL=https://<your-site>/`.
 
 ## What is in it
 

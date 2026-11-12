@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "check": "npm run lint && npm run test && npm run build"
+    "check": "npm run lint && npm run test && npm run build",
+    "deploy": "node scripts/deploy.mjs"
   },
   "dependencies": {
     "@fontsource/cormorant-garamond": "^5.3.0",
